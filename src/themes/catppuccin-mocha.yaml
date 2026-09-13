@@ -1,0 +1,85 @@
+name: catppuccin-mocha
+version: 1
+# Inspired by the Catppuccin Mocha color palette
+# (https://catppuccin.com/) - not affiliated with or endorsed by the
+# Catppuccin project. Soft pastel accents on a dark base.
+tokens:
+  background: "#1e1e2e" # base
+  card: "#313244" # surface0
+  cardForeground: "#cdd6f4" # text
+  muted: "#181825" # mantle
+  containerForeground: "#cba6f7" # mauve
+  border: "#45475a" # surface1
+  primary: "#89b4fa" # blue
+  primaryForeground: "#1e1e2e"
+  edge: "#f5c2e7" # pink
+  accentBorder: "#cba6f7" # mauve
+  radius: 10
+  successSurface: "#313244"
+  successBorder: "#a6e3a1" # green
+  successText: "#a6e3a1"
+  warningSurface: "#313244"
+  warningBorder: "#f9e2af" # yellow
+  warningText: "#f9e2af"
+  errorSurface: "#313244"
+  errorBorder: "#f38ba8" # red
+  errorText: "#f38ba8"
+defaults:
+  fontFamily: Inter
+  fontSize: 14
+  strokeWidth: 1
+rules:
+  - selector:
+      kind: node
+    style:
+      fillColor: "$card"
+      strokeColor: "$border"
+      fontColor: "$cardForeground"
+      rounded: 1
+      arcSize: "$radius"
+      whiteSpace: wrap
+      shadow: 0
+  - selector:
+      kind: edge
+    style:
+      strokeColor: "$edge"
+      strokeWidth: 1.5
+      rounded: 1
+      endArrow: block
+      endFill: 1
+  - selector:
+      kind: container
+    style:
+      fillColor: "$muted"
+      strokeColor: "$accentBorder"
+      fontColor: "$containerForeground"
+  - selector:
+      kind: database
+    style:
+      fillColor: "$card"
+      strokeColor: "#94e2d5" # teal
+      fontColor: "$cardForeground"
+      strokeWidth: 1.5
+  - selector:
+      tag: primary
+    style:
+      strokeColor: "$primary"
+      strokeWidth: 2
+  - selector:
+      tag: destructive
+    style:
+      fillColor: "$errorSurface"
+      strokeColor: "$errorBorder"
+      fontColor: "$errorText"
+  - selector:
+      tag: success
+    style:
+      fillColor: "$successSurface"
+      strokeColor: "$successBorder"
+      fontColor: "$successText"
+  - selector:
+      tag: warning
+    style:
+      fillColor: "$warningSurface"
+      strokeColor: "$warningBorder"
+      fontColor: "$warningText"

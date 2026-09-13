@@ -27,6 +27,7 @@
     "test": "vitest run"
   },
   "dependencies": {
+    "@resvg/resvg-js": "^2.6.2",
     "@xmldom/xmldom": "^0.9.12",
     "commander": "^15.0.0",
     "pako": "^3.0.2",
@@ -35,7 +36,6 @@
   },
   "devDependencies": {
     "@eslint/js": "^10.0.0",
-    "@resvg/resvg-js": "^2.6.2",
     "@types/node": "^24.13.4",
     "eslint": "^10.0.0",
     "prettier": "^3.6.2",

@@ -143,7 +143,11 @@ export function transformDrawioXml(
         }
 
         if (options.verbose) {
-          const label = cell.getAttribute("value") || cell.getAttribute("id") || "(unnamed)";
+          const label =
+            wrapper?.getAttribute("label") ||
+            cell.getAttribute("value") ||
+            cell.getAttribute("id") ||
+            "(unnamed)";
           verboseDetails.push({
             label,
             classes: classification.classes,

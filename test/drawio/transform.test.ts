@@ -167,6 +167,27 @@ describe("transformDrawioXml", () => {
     expect(node1Detail?.changedProperties.length).toBeGreaterThan(0);
   });
 
+  it("prefers the UserObject wrapper's label attribute for verbose display over the inner cell's value/id", async () => {
+    const xml = `<mxfile><diagram id="p1" name="P1"><mxGraphModel><root>
+      <mxCell id="0" /><mxCell id="1" parent="0" />
+      <UserObject label="Billing API" id="obj1">
+        <mxCell style="rounded=0;whiteSpace=wrap;html=1;" vertex="1" parent="1">
+          <mxGeometry x="0" y="0" width="120" height="60" as="geometry" />
+        </mxCell>
+      </UserObject>
+    </root></mxGraphModel></diagram></mxfile>`;
+    const theme = await loadCompiledTheme();
+
+    const result = transformDrawioXml(xml, theme, {
+      format: "preserve",
+      verbose: true,
+      themeMetadata: false,
+    });
+
+    expect(result.verboseDetails.length).toBe(1);
+    expect(result.verboseDetails[0]?.label).toBe("Billing API");
+  });
+
   it("skips cells with no matching rule instead of stamping global defaults on them", async () => {
     const xml = `<mxfile><diagram id="p1" name="P1"><mxGraphModel><root>
       <mxCell id="0" /><mxCell id="1" parent="0" />

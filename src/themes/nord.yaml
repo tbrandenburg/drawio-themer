@@ -1,0 +1,86 @@
+name: nord
+version: 1
+# Inspired by the Nord color palette (https://www.nordtheme.com/) - not
+# affiliated with or endorsed by the Nord project. Cool, muted arctic
+# blues/grays (Polar Night nord0-3, Snow Storm nord4-6, Frost nord7-10)
+# for a professional, low-glare dark theme.
+tokens:
+  background: "#2e3440" # nord0
+  card: "#3b4252" # nord1
+  cardForeground: "#eceff4" # nord6
+  muted: "#2e3440" # nord0 - darker container backdrop
+  containerForeground: "#88c0d0" # nord8 - frost accent for layer titles
+  border: "#4c566a" # nord3
+  primary: "#5e81ac" # nord10
+  primaryForeground: "#eceff4"
+  edge: "#81a1c1" # nord9
+  accentBorder: "#88c0d0" # nord8
+  radius: 8
+  successSurface: "#3b4252"
+  successBorder: "#a3be8c" # nord14
+  successText: "#a3be8c"
+  warningSurface: "#3b4252"
+  warningBorder: "#ebcb8b" # nord13
+  warningText: "#ebcb8b"
+  errorSurface: "#3b4252"
+  errorBorder: "#bf616a" # nord11
+  errorText: "#bf616a"
+defaults:
+  fontFamily: Inter
+  fontSize: 14
+  strokeWidth: 1
+rules:
+  - selector:
+      kind: node
+    style:
+      fillColor: "$card"
+      strokeColor: "$border"
+      fontColor: "$cardForeground"
+      rounded: 1
+      arcSize: "$radius"
+      whiteSpace: wrap
+      shadow: 0
+  - selector:
+      kind: edge
+    style:
+      strokeColor: "$edge"
+      strokeWidth: 1.5
+      rounded: 1
+      endArrow: block
+      endFill: 1
+  - selector:
+      kind: container
+    style:
+      fillColor: "$muted"
+      strokeColor: "$accentBorder"
+      fontColor: "$containerForeground"
+  - selector:
+      kind: database
+    style:
+      fillColor: "$card"
+      strokeColor: "$primary"
+      fontColor: "$cardForeground"
+      strokeWidth: 1.5
+  - selector:
+      tag: primary
+    style:
+      strokeColor: "$primary"
+      strokeWidth: 2
+  - selector:
+      tag: destructive
+    style:
+      fillColor: "$errorSurface"
+      strokeColor: "$errorBorder"
+      fontColor: "$errorText"
+  - selector:
+      tag: success
+    style:
+      fillColor: "$successSurface"
+      strokeColor: "$successBorder"
+      fontColor: "$successText"
+  - selector:
+      tag: warning
+    style:
+      fillColor: "$warningSurface"
+      strokeColor: "$warningBorder"
+      fontColor: "$warningText"

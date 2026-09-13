@@ -71,6 +71,14 @@ rules:
     style:
       fillColor: "#fafafa"
       strokeColor: "#d4d4d8"
+  # Exercises the `shape` selector (see src/theme/matcher.ts) on top of
+  # the broader `kind: database` rule above - same fill/stroke intent,
+  # but scoped to the literal cylinder3 shape rather than the derived
+  # "database" class.
+  - selector:
+      shape: cylinder3
+    style:
+      strokeWidth: 1.5
   - selector:
       tag: primary
     style:

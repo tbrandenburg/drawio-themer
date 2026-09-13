@@ -6,13 +6,6 @@
  * order, so Phase 6's transformer can apply them sequentially and get
  * "last applicable rule wins for each property" for free via repeated
  * `mergeStyle` calls.
- *
- * Note: `shape`-based selectors are not evaluated here. `classifyCell`
- * (Phase 4) does not currently surface a cell's raw `shape=` style
- * property on `CellClassification`, and the PRD gives no concrete
- * shape-selector example, so full `shape` matching is left as a
- * follow-up (see handoff notes) rather than speculatively plumbing a
- * new field through Phase 4's output.
  */
 import type { CellClassification, CompiledRule, CompiledSelector } from "../types.js";
 
@@ -29,9 +22,7 @@ function selectorMatches(selector: CompiledSelector, classification: CellClassif
   ) {
     return false;
   }
-  // `shape` selectors are not supported yet (see module doc); a rule
-  // specifying one never matches.
-  if (selector.shape !== undefined) {
+  if (selector.shape !== undefined && classification.shape !== selector.shape) {
     return false;
   }
   return true;

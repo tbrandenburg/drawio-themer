@@ -101,5 +101,5 @@ export function classifyCell(cell: XmlElement, wrapper?: XmlElement): CellClassi
     }
   }
 
-  return { classes, semanticTags };
+  return { classes, semanticTags, shape: properties.shape };
 }

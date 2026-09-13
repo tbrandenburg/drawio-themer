@@ -52,61 +52,44 @@ and `make test` as three independent required checks (`Checks / Format`,
 ## Previewing before/after `.drawio` diagrams in chat
 
 There is no real draw.io renderer available offline (no internet, no
-draw.io/Electron CLI). `scripts/render-drawio-preview.py` is a
-lightweight, offline mxCell-XML-to-SVG approximation (rects, cylinders,
-edges clipped to node perimeters, labels) — good enough for a quick
+draw.io/Electron CLI). Since issue #5, `apply` has built-in
+`--png-original`/`--png-themed` (alias `--png`) flags that render an
+offline, approximate SVG-to-PNG preview (rects, cylinders, edges clipped
+to node perimeters, labels, via `src/render/previewSvg.ts` +
+`src/render/rasterize.ts`, `@resvg/resvg-js`) — good enough for a quick
 visual diff, not a substitute for opening the file in real draw.io (no
 waypoints/groups/rotation/HTML labels).
 
-**Rasterizer choice matters a lot for visual quality. Default to
-`scripts/svg-to-png.mjs` (`@resvg/resvg-js`) — reserve the Playwright
-browser pipeline for cases it can't handle:**
-
-| Rasterizer                                                                          | Quality  | Overhead                                                                                                                                       | Notes                                                                                                                                                                                                                                             |
-| ----------------------------------------------------------------------------------- | -------- | ---------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| **`node scripts/svg-to-png.mjs in.svg out.png`** (`@resvg/resvg-js`, devDependency) | **Good** | **Low** — one `npm install`, ~4MB native addon, prebuilt binaries for Linux/macOS/Windows (x64+arm64), single function call, no server/browser | **Default choice.** Full `<filter>` (`feGaussianBlur`/`feMerge`) and gradient support, real anti-aliasing — visually indistinguishable from the Chromium screenshot in side-by-side testing (see git history). Fully scriptable, no manual steps. |
-| `convert -background none in.svg out.png` (ImageMagick)                             | Poor     | Low (already installed)                                                                                                                        | No `rsvg-convert` binary in this environment -> silently falls back to ImageMagick's own MSVG delegate: **no `<filter>` support** (blur/glow silently dropped), weak anti-aliasing, no gradients. Looks flat/blocky ("90s" look). Avoid.          |
-| `rsvg-convert`                                                                      | N/A here | —                                                                                                                                              | Not installed and no internet to install it (only the `librsvg2-2`/`-common` _libraries_ are present, not the CLI). Don't rely on it existing.                                                                                                    |
-| Playwright MCP browser (Chromium)                                                   | Good     | High — ~300MB Chromium download, needs a local HTTP server (`file://` is blocked), manual navigate/screenshot steps per image                  | Fallback only, for whatever `resvg` can't render (e.g. HTML-based `foreignObject` labels). Use `--filter-glow` mode with this path.                                                                                                               |
-
-Default workflow (`resvg`, one command chain, no browser/server):
+Default workflow — a single command, no separate Python/SVG steps:
 
 ```bash
-node dist/cli.js apply in.drawio -t theme.yaml -o out.drawio
-python3 scripts/render-drawio-preview.py in.drawio before.svg "#ffffff"
-python3 scripts/render-drawio-preview.py out.drawio after.svg "#09090b" --filter-glow
-node scripts/svg-to-png.mjs before.svg before.png
-node scripts/svg-to-png.mjs after.svg after.png
+make build
+node dist/cli.js apply in.drawio -t theme.yaml -o out.drawio \
+  --png-original before.png \
+  --png-themed after.png
 ```
 
 Concrete, copy-pasteable, runnable-from-a-fresh-clone example (this is
-exactly how `docs/assets/demo-before.png`/`demo-after.png` — the README's
-hero image — were produced; `dark-neon-mode` is a bundled built-in theme
-registered in `src/commands/apply.ts`'s `BUILTIN_THEMES` map, and the
-fixture lives in `docs/assets/fixtures/`, so no external/temp files are
-needed to reproduce it):
+how a before/after PNG pair like the README's hero image can be
+reproduced; `dark-neon-mode` is a bundled built-in theme registered in
+`src/commands/apply.ts`'s `BUILTIN_THEMES` map, and the fixture lives in
+`docs/assets/fixtures/`, so no external/temp files are needed):
 
 ```bash
 make build
 node dist/cli.js apply docs/assets/fixtures/layered-architecture.drawio \
-  -t dark-neon-mode -o /tmp/demo-after.drawio
-python3 scripts/render-drawio-preview.py \
-  docs/assets/fixtures/layered-architecture.drawio docs/assets/demo-before.svg "#ffffff"
-python3 scripts/render-drawio-preview.py \
-  /tmp/demo-after.drawio docs/assets/demo-after.svg "#09090b" --filter-glow
-node scripts/svg-to-png.mjs docs/assets/demo-before.svg docs/assets/demo-before.png
-node scripts/svg-to-png.mjs docs/assets/demo-after.svg docs/assets/demo-after.png
-rm docs/assets/demo-before.svg docs/assets/demo-after.svg  # scratch, not committed
+  -t dark-neon-mode -o /tmp/demo-after.drawio \
+  --png-original docs/assets/demo-before.png \
+  --png-themed docs/assets/demo-after.png
 ```
 
 If you add a new bundled theme for a demo image like this, register it in
 `BUILTIN_THEMES` (`src/commands/apply.ts`) so `-t <name>` resolves it by
 name — a theme file sitting only in `src/themes/` is not enough, and a
 theme/fixture living only in `/tmp` makes the recipe above
-unreproducible for the next person (this was caught and fixed after the
-first draft of this doc referenced now-deleted `/tmp` scratch files).
+unreproducible for the next person.
 
-Notes that still apply regardless of rasterizer:
+Notes that still apply:
 
 - **If the fixture uses layer/swimlane boxes that should theme as
   containers**, verify they have `container=1` in their `style` first
@@ -115,7 +98,7 @@ Notes that still apply regardless of rasterizer:
   matches (looks "untouched").
 - Font handling: the theme's real `fontFamily` (e.g. `Inter`, a web
   font bundled by real draw.io) is _not_ installed in this offline
-  sandbox, so `render-drawio-preview.py` appends its own verified
+  sandbox, so `src/render/previewSvg.ts` appends its own verified
   fallback stack (`Noto Sans, Helvetica Neue, Arial, sans-serif`) to
   every `font-family` it emits — do not edit a theme's `fontFamily`
   token just to fix the local preview's look; fix the renderer's
@@ -125,13 +108,12 @@ Notes that still apply regardless of rasterizer:
   Indic families are available here — no `Inter`, no `Arial`/
   `Helvetica` as real font files, only fontconfig aliases to
   Liberation Sans). `resvg`'s `font.loadSystemFonts` option picks these
-  up automatically via fontconfig, same as the browser pipeline.
+  up automatically via fontconfig.
 - **Before claiming the render is correct, read the PNG back with an
   image-capable Read tool and visually inspect it** — do not infer
-  correctness from the SVG source (e.g. grepping for `filter=` proves
-  nothing about whether the chosen rasterizer actually honors it) or
-  from the CLI's `--verbose` "themed" counts (they prove the theme
-  compiled, not that the preview rendered it visibly).
+  correctness from the SVG source or from the CLI's `--verbose`
+  "themed" counts (they prove the theme compiled, not that the preview
+  rendered it visibly).
 - Save PNGs under `.playwright-mcp/` (gitignored, for chat-only scratch
   work) or `docs/assets/` (committed, for README/docs) with a **fresh,
   unique filename per revision** (e.g. `themed-v2.png`, not a reused
@@ -139,11 +121,21 @@ Notes that still apply regardless of rasterizer:
   overwriting the same name can show a stale image even after the
   underlying file changed.
 
-### Fallback: Playwright browser pipeline
+### Fallback: standalone scripts / Playwright browser pipeline
 
-Only needed for SVG features `resvg` doesn't support. Adds a real
-browser engine at the cost of much higher overhead (Chromium install, a
-local HTTP server, manual per-image navigate/screenshot calls):
+`scripts/render-drawio-preview.py` (Python) and `scripts/svg-to-png.mjs`
+(thin wrapper around `src/render/rasterize.ts`) still exist standalone
+for docs/demo work outside the CLI, or for whatever SVG feature `resvg`
+doesn't support (e.g. HTML-based `foreignObject` labels):
+
+```bash
+python3 scripts/render-drawio-preview.py in.drawio before.svg "#ffffff"
+node scripts/svg-to-png.mjs before.svg before.png
+```
+
+For the rare case `resvg` can't render a feature, fall back to a real
+browser engine (much higher overhead: Chromium install, a local HTTP
+server, manual per-image navigate/screenshot calls):
 
 1. Render SVG as above.
 2. Wrap in a minimal HTML file (`<body style="margin:0"><svg>...</svg></body>`)

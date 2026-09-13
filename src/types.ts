@@ -17,6 +17,10 @@ export interface ApplyOptions {
   format: OutputFormat;
   verbose: boolean;
   themeMetadata: boolean;
+  /** Render the *input* (pre-theme) file as an approximate PNG preview. */
+  pngOriginal?: string;
+  /** Render the *themed* output as an approximate PNG preview. */
+  pngThemed?: string;
 }
 
 /**
@@ -51,10 +55,15 @@ export type CellClass = "image" | "text" | "container" | "database" | "edge" | "
  * `semanticTags` lists derived `role:`/`tag:` metadata tags from an
  * enclosing `<object>`/`<UserObject>` wrapper, kept separate from
  * `classes` because they describe author intent, not shape appearance.
+ *
+ * `shape` is the cell's raw `shape=` style property value (e.g.
+ * `cylinder3`), if present, so a rule's `shape` selector can match a
+ * cell's literal shape independent of its derived `classes`.
  */
 export interface CellClassification {
   classes: CellClass[];
   semanticTags: string[];
+  shape?: string;
 }
 
 /**
