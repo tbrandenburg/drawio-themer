@@ -4,9 +4,7 @@ Apply modern, semantic visual themes to existing draw.io / diagrams.net
 `.drawio` files — from the command line, without touching geometry,
 topology, or shape semantics.
 
-[![Format](https://github.com/tbrandenburg/drawio-themer/actions/workflows/checks.yml/badge.svg?branch=main&event=push&job=format)](https://github.com/tbrandenburg/drawio-themer/actions/workflows/checks.yml)
-[![Lint](https://github.com/tbrandenburg/drawio-themer/actions/workflows/checks.yml/badge.svg?branch=main&event=push&job=lint)](https://github.com/tbrandenburg/drawio-themer/actions/workflows/checks.yml)
-[![Tests](https://github.com/tbrandenburg/drawio-themer/actions/workflows/checks.yml/badge.svg?branch=main&event=push&job=test)](https://github.com/tbrandenburg/drawio-themer/actions/workflows/checks.yml)
+[![Checks](https://github.com/tbrandenburg/drawio-themer/actions/workflows/checks.yml/badge.svg?branch=main)](https://github.com/tbrandenburg/drawio-themer/actions/workflows/checks.yml)
 [![Node](https://img.shields.io/badge/node-%3E%3D24-339933?logo=node.js&logoColor=white)](package.json)
 [![License: MIT](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
 
