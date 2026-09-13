@@ -5,8 +5,8 @@ import type { ApplyOptions, CellClass, TransformStats, VerboseCellDetail } from 
 import { loadTheme } from "../theme/loader.js";
 import { compileTheme } from "../theme/compiler.js";
 import { transformDrawioXml } from "../drawio/transform.js";
-import { renderDrawioToSvg } from "../render/previewSvg.js";
-import type { PreviewOptions } from "../render/previewSvg.js";
+import { renderDrawioToSvg } from "../render/svg.js";
+import type { RenderOptions } from "../render/svg.js";
 import { rasterizeSvgToPng } from "../render/rasterize.js";
 
 const MODULE_DIR = dirname(fileURLToPath(import.meta.url));
@@ -75,18 +75,32 @@ function printVerboseDetails(details: VerboseCellDetail[]): void {
 }
 
 /**
- * Renders a `.drawio` document's first page to a PNG preview file (PRD
- * issue #5). Shared by both `--png-original` and `--png-themed` so there
- * is exactly one code path from drawio XML to PNG bytes.
+ * Renders a `.drawio` document's first page to a PNG file (PRD issue #5).
+ * Shared by both `--png-original` and `--png-themed` so there is exactly
+ * one code path from drawio XML to PNG bytes.
  */
 async function renderDrawioToPng(
   drawioXml: string,
   outputPath: string,
-  options?: PreviewOptions,
+  options?: RenderOptions,
 ): Promise<void> {
   const svg = renderDrawioToSvg(drawioXml, options);
   const png = rasterizeSvgToPng(svg);
   await writeFile(outputPath, png);
+}
+
+/**
+ * Renders a `.drawio` document's first page directly to an SVG file
+ * (issue #9). Reuses the exact same `renderDrawioToSvg()` call as
+ * `renderDrawioToPng()`, just skipping the rasterization step.
+ */
+async function renderDrawioToSvgFile(
+  drawioXml: string,
+  outputPath: string,
+  options?: RenderOptions,
+): Promise<void> {
+  const svg = renderDrawioToSvg(drawioXml, options);
+  await writeFile(outputPath, svg);
 }
 
 /**
@@ -121,7 +135,18 @@ export async function applyCommand(input: string, options: ApplyOptions): Promis
     const background = themeInput.tokens.background;
     await renderDrawioToPng(outputXml, options.pngThemed, {
       background: background !== undefined ? String(background) : undefined,
-      glow: themeInput.previewGlow ? "filter" : "none",
+      glow: themeInput.glow ? "filter" : "none",
+    });
+  }
+
+  if (options.svgOriginal) {
+    await renderDrawioToSvgFile(contents, options.svgOriginal);
+  }
+  if (options.svgThemed) {
+    const background = themeInput.tokens.background;
+    await renderDrawioToSvgFile(outputXml, options.svgThemed, {
+      background: background !== undefined ? String(background) : undefined,
+      glow: themeInput.glow ? "filter" : "none",
     });
   }
 

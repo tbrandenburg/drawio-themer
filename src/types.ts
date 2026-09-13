@@ -17,10 +17,14 @@ export interface ApplyOptions {
   format: OutputFormat;
   verbose: boolean;
   themeMetadata: boolean;
-  /** Render the *input* (pre-theme) file as an approximate PNG preview. */
+  /** Render the *input* (pre-theme) file as an approximate PNG render. */
   pngOriginal?: string;
-  /** Render the *themed* output as an approximate PNG preview. */
+  /** Render the *themed* output as an approximate PNG render. */
   pngThemed?: string;
+  /** Render the *input* (pre-theme) file as an approximate SVG render. */
+  svgOriginal?: string;
+  /** Render the *themed* output as an approximate SVG render. */
+  svgThemed?: string;
 }
 
 /**
