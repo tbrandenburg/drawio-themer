@@ -56,3 +56,36 @@ export interface CellClassification {
   classes: CellClass[];
   semanticTags: string[];
 }
+
+/**
+ * A theme rule's selector, fully compiled (PRD section 11/12/15). Every
+ * field is optional; a rule matches a cell only if every field it
+ * specifies matches (AND semantics). See `src/theme/matcher.ts`.
+ */
+export interface CompiledSelector {
+  kind?: CellClass;
+  shape?: string;
+  tag?: string;
+  role?: string;
+}
+
+/**
+ * A single theme rule after token resolution (PRD section 16, "Theme
+ * Resolution Pipeline"). `style` contains only allow-listed properties
+ * (PRD section 10) with all `$token` references resolved to concrete
+ * string values.
+ */
+export interface CompiledRule {
+  selector: CompiledSelector;
+  style: Record<string, string>;
+}
+
+/**
+ * Fully resolved theme, ready for Phase 6's transformer to apply (PRD
+ * section 16). `defaults` and every rule's `style` have no `$refs` left.
+ */
+export interface CompiledTheme {
+  name: string;
+  defaults: Record<string, string>;
+  rules: CompiledRule[];
+}

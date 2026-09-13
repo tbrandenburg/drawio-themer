@@ -1,0 +1,60 @@
+name: shadcn-modern
+version: 1
+tokens:
+  background: "#ffffff"
+  foreground: "#18181b"
+  card: "#ffffff"
+  cardForeground: "#18181b"
+  muted: "#f4f4f5"
+  mutedForeground: "#71717a"
+  border: "#e4e4e7"
+  primary: "#4f46e5"
+  primaryForeground: "#ffffff"
+  destructive: "#dc2626"
+  edge: "#a1a1aa"
+  radius: 12
+defaults:
+  fontFamily: Inter
+  fontSize: 14
+  strokeWidth: 1
+rules:
+  - selector:
+      kind: node
+    style:
+      fillColor: "$card"
+      strokeColor: "$border"
+      fontColor: "$cardForeground"
+      rounded: 1
+      arcSize: "$radius"
+      whiteSpace: wrap
+      shadow: 0
+  - selector:
+      kind: edge
+    style:
+      strokeColor: "$edge"
+      strokeWidth: 1.5
+      rounded: 1
+      endArrow: block
+      endFill: 1
+  - selector:
+      kind: container
+    style:
+      fillColor: "$muted"
+      strokeColor: "$border"
+      fontColor: "$foreground"
+  - selector:
+      kind: database
+    style:
+      fillColor: "#fafafa"
+      strokeColor: "#d4d4d8"
+  - selector:
+      tag: primary
+    style:
+      strokeColor: "$primary"
+      strokeWidth: 2
+  - selector:
+      tag: destructive
+    style:
+      fillColor: "#fef2f2"
+      strokeColor: "$destructive"
+      fontColor: "#991b1b"
