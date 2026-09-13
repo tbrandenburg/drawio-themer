@@ -57,7 +57,7 @@ rules:
       kind: database
     style:
       fillColor: "$card"
-      strokeColor: "#94e2d5" # teal
+      strokeColor: "$border"
       fontColor: "$cardForeground"
       strokeWidth: 1.5
   - selector:
