@@ -5,6 +5,8 @@ import type { ApplyOptions, CellClass, TransformStats, VerboseCellDetail } from 
 import { loadTheme } from "../theme/loader.js";
 import { compileTheme } from "../theme/compiler.js";
 import { transformDrawioXml } from "../drawio/transform.js";
+import { renderDrawioToSvg } from "../render/previewSvg.js";
+import { rasterizeSvgToPng } from "../render/rasterize.js";
 
 const MODULE_DIR = dirname(fileURLToPath(import.meta.url));
 
@@ -72,6 +74,17 @@ function printVerboseDetails(details: VerboseCellDetail[]): void {
 }
 
 /**
+ * Renders a `.drawio` document's first page to a PNG preview file (PRD
+ * issue #5). Shared by both `--png-original` and `--png-themed` so there
+ * is exactly one code path from drawio XML to PNG bytes.
+ */
+async function renderDrawioToPng(drawioXml: string, outputPath: string): Promise<void> {
+  const svg = renderDrawioToSvg(drawioXml);
+  const png = rasterizeSvgToPng(svg);
+  await writeFile(outputPath, png);
+}
+
+/**
  * Phase 6 implementation of the `apply` command (PRD section 17): reads
  * the input `.drawio` file, resolves and compiles the requested theme,
  * runs the full transformation pipeline, then writes the themed output
@@ -95,6 +108,13 @@ export async function applyCommand(input: string, options: ApplyOptions): Promis
     verbose: options.verbose,
     themeMetadata: options.themeMetadata,
   });
+
+  if (options.pngOriginal) {
+    await renderDrawioToPng(contents, options.pngOriginal);
+  }
+  if (options.pngThemed) {
+    await renderDrawioToPng(outputXml, options.pngThemed);
+  }
 
   if (options.dryRun) {
     if (options.verbose) printVerboseDetails(verboseDetails);

@@ -17,6 +17,10 @@ export interface ApplyOptions {
   format: OutputFormat;
   verbose: boolean;
   themeMetadata: boolean;
+  /** Render the *input* (pre-theme) file as an approximate PNG preview. */
+  pngOriginal?: string;
+  /** Render the *themed* output as an approximate PNG preview. */
+  pngThemed?: string;
 }
 
 /**
