@@ -13,8 +13,9 @@ const shadcnModernPath = fileURLToPath(
 function classification(
   classes: CellClassification["classes"],
   semanticTags: string[] = [],
+  shape?: string,
 ): CellClassification {
-  return { classes, semanticTags };
+  return { classes, semanticTags, shape };
 }
 
 describe("matchRules", () => {
@@ -36,8 +37,12 @@ describe("matchRules", () => {
     expect(matchRules(cell, [tagRule, roleRule])).toEqual([tagRule, roleRule]);
   });
 
-  it("does not match shape selectors (not yet supported)", () => {
+  it("matches on shape (literal `shape=` style value)", () => {
     const shapeRule: CompiledRule = { selector: { shape: "cylinder3" }, style: {} };
+    expect(matchRules(classification(["database"], [], "cylinder3"), [shapeRule])).toEqual([
+      shapeRule,
+    ]);
+    expect(matchRules(classification(["database"], [], "cylinder"), [shapeRule])).toEqual([]);
     expect(matchRules(classification(["database"]), [shapeRule])).toEqual([]);
   });
 
