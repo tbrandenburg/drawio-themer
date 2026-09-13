@@ -39,18 +39,23 @@ install-global: build
 
 # release-{patch,minor,major}: full format/lint/test/build/run gate
 # must pass before `npm version` bumps package.json, commits, and tags,
-# then the commit + tag are pushed.
+# then the commit + tag are pushed and a GitHub Release is created from
+# the tag (requires `gh` authenticated) so every release bump has a
+# corresponding release page, not just a git tag.
 release-patch: run
 	npm version patch
 	git push --follow-tags
+	gh release create "v$$(node -p "require('./package.json').version")" --generate-notes
 
 release-minor: run
 	npm version minor
 	git push --follow-tags
+	gh release create "v$$(node -p "require('./package.json').version")" --generate-notes
 
 release-major: run
 	npm version major
 	git push --follow-tags
+	gh release create "v$$(node -p "require('./package.json').version")" --generate-notes
 
 # Default release bump. Override with `make release-patch/-minor/-major`.
 release: release-patch
