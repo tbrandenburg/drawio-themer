@@ -1,10 +1,11 @@
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 import { mkdtemp, readFile, rm, stat } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { inflateSync } from "node:zlib";
 import { applyCommand } from "../src/commands/apply.js";
 import { loadDrawioDocument, getPages } from "../src/drawio/document.js";
+import * as previewSvg from "../src/render/previewSvg.js";
 import type { ApplyOptions } from "../src/types.js";
 
 const PNG_MAGIC = Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]);
@@ -230,6 +231,31 @@ describe("applyCommand --png-original / --png-themed", () => {
     const [r, g, b] = await readTopLeftPixelRgb(pngOriginal);
     expect([r, g, b]).toEqual([255, 255, 255]);
 
+    await rm(dir, { recursive: true, force: true });
+  });
+
+  it("enables the glow filter for --png-themed but not for --png-original", async () => {
+    const dir = await mkdtemp(join(tmpdir(), "drawio-themer-"));
+    const output = join(dir, "output.drawio");
+    const pngOriginal = join(dir, "before.png");
+    const pngThemed = join(dir, "after.png");
+    const spy = vi.spyOn(previewSvg, "renderDrawioToSvg");
+
+    await applyCommand(SIMPLE_FIXTURE, {
+      ...baseOptions,
+      theme: "nord",
+      output,
+      pngOriginal,
+      pngThemed,
+    });
+
+    expect(spy).toHaveBeenCalledTimes(2);
+    const [, originalOptions] = spy.mock.calls[0]!;
+    const [, themedOptions] = spy.mock.calls[1]!;
+    expect(originalOptions?.glow).not.toBe("filter");
+    expect(themedOptions?.glow).toBe("filter");
+
+    spy.mockRestore();
     await rm(dir, { recursive: true, force: true });
   });
 });

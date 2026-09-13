@@ -6,6 +6,7 @@ import { loadTheme } from "../theme/loader.js";
 import { compileTheme } from "../theme/compiler.js";
 import { transformDrawioXml } from "../drawio/transform.js";
 import { renderDrawioToSvg } from "../render/previewSvg.js";
+import type { PreviewOptions } from "../render/previewSvg.js";
 import { rasterizeSvgToPng } from "../render/rasterize.js";
 
 const MODULE_DIR = dirname(fileURLToPath(import.meta.url));
@@ -81,9 +82,9 @@ function printVerboseDetails(details: VerboseCellDetail[]): void {
 async function renderDrawioToPng(
   drawioXml: string,
   outputPath: string,
-  background?: string,
+  options?: PreviewOptions,
 ): Promise<void> {
-  const svg = renderDrawioToSvg(drawioXml, background ? { background } : undefined);
+  const svg = renderDrawioToSvg(drawioXml, options);
   const png = rasterizeSvgToPng(svg);
   await writeFile(outputPath, png);
 }
@@ -118,11 +119,10 @@ export async function applyCommand(input: string, options: ApplyOptions): Promis
   }
   if (options.pngThemed) {
     const background = themeInput.tokens.background;
-    await renderDrawioToPng(
-      outputXml,
-      options.pngThemed,
-      background !== undefined ? String(background) : undefined,
-    );
+    await renderDrawioToPng(outputXml, options.pngThemed, {
+      background: background !== undefined ? String(background) : undefined,
+      glow: "filter",
+    });
   }
 
   if (options.dryRun) {
