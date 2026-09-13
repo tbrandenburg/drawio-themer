@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { renderDrawioToSvg, FONT_FALLBACK_STACK } from "../../src/render/previewSvg.js";
+import { renderDrawioToSvg, FONT_FALLBACK_STACK } from "../../src/render/svg.js";
 
 function drawio(rootCells: string): string {
   return `<mxfile host="test"><diagram id="p1" name="Page-1"><mxGraphModel><root>${rootCells}</root></mxGraphModel></diagram></mxfile>`;

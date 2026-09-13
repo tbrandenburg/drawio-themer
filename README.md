@@ -101,14 +101,19 @@ Options:
       --verbose             Show matching/transformation details
       --no-theme-metadata   Do not annotate generated file
       --png-original <file> Render the input (pre-theme) file as an
-                            approximate PNG preview
+                            approximate PNG render
       --png-themed, --png <file>
                             Render the themed output as an approximate
-                            PNG preview
+                            PNG render
+      --svg-original <file> Render the input (pre-theme) file as an
+                            approximate SVG render
+      --svg-themed, --svg <file>
+                            Render the themed output as an approximate
+                            SVG render
   -h, --help
 ```
 
-PNG previews are an offline, approximate rasterization of the diagram
+PNG/SVG renders are an offline, approximate rasterization of the diagram
 (rects, database cylinders, edges clipped to node borders, labels) meant
 for a quick visual check — not a substitute for opening the file in real
 draw.io (no waypoints, groups, rotation, or HTML labels support):
@@ -116,7 +121,9 @@ draw.io (no waypoints, groups, rotation, or HTML labels support):
 ```sh
 node dist/cli.js apply input.drawio -t dark-neon-mode -o output.drawio \
   --png-original before.png \
-  --png-themed after.png
+  --png-themed after.png \
+  --svg-original before.svg \
+  --svg-themed after.svg
 ```
 
 ## Themes
@@ -146,15 +153,15 @@ matched against classified cells (`node`, `edge`, `container`,
 - [`high-contrast`](src/themes/high-contrast.yaml) — WCAG-AA-oriented
   black/white/yellow, accessibility-first
 
-Each preview below renders the same fixture
+Each render below shows the same fixture
 (`docs/assets/fixtures/layered-architecture.drawio`) via
 `apply --png-themed` (see [Usage](#usage) above). Only the
 vibrant/neon-leaning dark themes (`dark-neon-mode`, `dracula`,
-`monokai`) opt into the preview's glow filter (`previewGlow: true` in
+`monokai`) opt into the render's glow filter (`glow: true` in
 their YAML) — muted, light, retro, or accessibility-focused themes
 render flat/crisp on purpose.
 
-| Theme              | Preview                                                      |
+| Theme              | Render                                                       |
 | ------------------ | ------------------------------------------------------------ |
 | `shadcn-modern`    | ![shadcn-modern](docs/assets/themes/shadcn-modern.png)       |
 | `dark-neon-mode`   | ![dark-neon-mode](docs/assets/themes/dark-neon-mode.png)     |

@@ -1,10 +1,11 @@
 /**
- * Lightweight, offline `.drawio` -> SVG preview renderer (issue #5).
+ * Lightweight, offline `.drawio` -> SVG renderer (issue #5; SVG became a
+ * first-class, user-facing output format in issue #9).
  *
  * TypeScript port of `scripts/render-drawio-preview.py`, built on top of
  * the document model the CLI already constructs (`loadDrawioDocument` /
  * `getPages`) instead of re-parsing the raw `.drawio` XML from scratch -
- * this guarantees the preview reflects exactly the same page content
+ * this guarantees the render reflects exactly the same page content
  * (inline or compressed) that the rest of the pipeline sees, rather than
  * a second, independent XML parse.
  *
@@ -20,18 +21,18 @@ import { parseStyle } from "../drawio/styles.js";
 
 /**
  * The generated `.drawio` file's fontFamily (e.g. "Inter") is a valid,
- * bundled web font in real draw.io/diagrams.net, but an offline preview
+ * bundled web font in real draw.io/diagrams.net, but an offline render
  * environment may have no such font installed. Rather than mutate the
  * theme's actual fontFamily token, append known-installed fallbacks here
- * so the *preview* still renders a modern sans instead of the
- * rasterizer's serif default for an unrecognized font name.
+ * so the render still uses a modern sans instead of the rasterizer's
+ * serif default for an unrecognized font name.
  */
 export const FONT_FALLBACK_STACK = "Noto Sans, Helvetica Neue, Arial, sans-serif";
 
 /** Whether to draw a soft glow behind nodes/edges using a real SVG `<filter>`. */
 export type GlowMode = "none" | "filter";
 
-export interface PreviewOptions {
+export interface RenderOptions {
   /** Background fill color for the canvas. Defaults to `#ffffff`. */
   background?: string;
   /** Glow rendering mode (feGaussianBlur + gradients). Defaults to `"none"`. */
@@ -113,11 +114,11 @@ function escapeXml(text: string): string {
 }
 
 /**
- * Renders the first page of a `.drawio` document as an approximate SVG
- * preview, reusing the document model (handles both inline and
- * compressed page content transparently).
+ * Renders the first page of a `.drawio` document as an approximate SVG,
+ * reusing the document model (handles both inline and compressed page
+ * content transparently).
  */
-export function renderDrawioToSvg(drawioXml: string, options: PreviewOptions = {}): string {
+export function renderDrawioToSvg(drawioXml: string, options: RenderOptions = {}): string {
   const { background = "#ffffff", glow = "none", width = 850, height = 700 } = options;
 
   const doc = loadDrawioDocument(drawioXml);

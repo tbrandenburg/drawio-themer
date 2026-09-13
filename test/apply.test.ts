@@ -5,7 +5,7 @@ import { join } from "node:path";
 import { inflateSync } from "node:zlib";
 import { applyCommand } from "../src/commands/apply.js";
 import { loadDrawioDocument, getPages } from "../src/drawio/document.js";
-import * as previewSvg from "../src/render/previewSvg.js";
+import * as svgRenderer from "../src/render/svg.js";
 import type { ApplyOptions } from "../src/types.js";
 
 const PNG_MAGIC = Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]);
@@ -13,6 +13,11 @@ const PNG_MAGIC = Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]);
 async function expectPngFile(path: string): Promise<void> {
   const bytes = await readFile(path);
   expect(bytes.subarray(0, 8)).toEqual(PNG_MAGIC);
+}
+
+async function expectSvgFile(path: string): Promise<void> {
+  const contents = await readFile(path, "utf8");
+  expect(contents).toContain("<svg");
 }
 
 /**
@@ -234,12 +239,12 @@ describe("applyCommand --png-original / --png-themed", () => {
     await rm(dir, { recursive: true, force: true });
   });
 
-  it("enables the glow filter for --png-themed on a previewGlow:true theme, not on --png-original", async () => {
+  it("enables the glow filter for --png-themed on a glow:true theme, not on --png-original", async () => {
     const dir = await mkdtemp(join(tmpdir(), "drawio-themer-"));
     const output = join(dir, "output.drawio");
     const pngOriginal = join(dir, "before.png");
     const pngThemed = join(dir, "after.png");
-    const spy = vi.spyOn(previewSvg, "renderDrawioToSvg");
+    const spy = vi.spyOn(svgRenderer, "renderDrawioToSvg");
 
     await applyCommand(SIMPLE_FIXTURE, {
       ...baseOptions,
@@ -259,11 +264,11 @@ describe("applyCommand --png-original / --png-themed", () => {
     await rm(dir, { recursive: true, force: true });
   });
 
-  it("does not enable the glow filter for a previewGlow:false (default) theme", async () => {
+  it("does not enable the glow filter for a glow:false (default) theme", async () => {
     const dir = await mkdtemp(join(tmpdir(), "drawio-themer-"));
     const output = join(dir, "output.drawio");
     const pngThemed = join(dir, "after.png");
-    const spy = vi.spyOn(previewSvg, "renderDrawioToSvg");
+    const spy = vi.spyOn(svgRenderer, "renderDrawioToSvg");
 
     await applyCommand(SIMPLE_FIXTURE, { ...baseOptions, theme: "nord", output, pngThemed });
 
@@ -271,6 +276,99 @@ describe("applyCommand --png-original / --png-themed", () => {
     expect(themedOptions?.glow).not.toBe("filter");
 
     spy.mockRestore();
+    await rm(dir, { recursive: true, force: true });
+  });
+});
+
+describe("applyCommand --svg-original / --svg-themed", () => {
+  it("writes both SVGs with valid markup when both flags are given", async () => {
+    const dir = await mkdtemp(join(tmpdir(), "drawio-themer-"));
+    const output = join(dir, "output.drawio");
+    const svgOriginal = join(dir, "before.svg");
+    const svgThemed = join(dir, "after.svg");
+
+    await applyCommand(SIMPLE_FIXTURE, { ...baseOptions, output, svgOriginal, svgThemed });
+
+    await expectSvgFile(svgOriginal);
+    await expectSvgFile(svgThemed);
+
+    await rm(dir, { recursive: true, force: true });
+  });
+
+  it("writes only --svg-original when --svg-themed is omitted", async () => {
+    const dir = await mkdtemp(join(tmpdir(), "drawio-themer-"));
+    const output = join(dir, "output.drawio");
+    const svgOriginal = join(dir, "before.svg");
+    const svgThemed = join(dir, "after.svg");
+
+    await applyCommand(SIMPLE_FIXTURE, { ...baseOptions, output, svgOriginal });
+
+    await expectSvgFile(svgOriginal);
+    await expectMissing(svgThemed);
+
+    await rm(dir, { recursive: true, force: true });
+  });
+
+  it("writes only --svg-themed when --svg-original is omitted", async () => {
+    const dir = await mkdtemp(join(tmpdir(), "drawio-themer-"));
+    const output = join(dir, "output.drawio");
+    const svgOriginal = join(dir, "before.svg");
+    const svgThemed = join(dir, "after.svg");
+
+    await applyCommand(SIMPLE_FIXTURE, { ...baseOptions, output, svgThemed });
+
+    await expectMissing(svgOriginal);
+    await expectSvgFile(svgThemed);
+
+    await rm(dir, { recursive: true, force: true });
+  });
+
+  it("writes neither SVG when neither flag is given", async () => {
+    const dir = await mkdtemp(join(tmpdir(), "drawio-themer-"));
+    const output = join(dir, "output.drawio");
+    const svgOriginal = join(dir, "before.svg");
+    const svgThemed = join(dir, "after.svg");
+
+    await applyCommand(SIMPLE_FIXTURE, { ...baseOptions, output });
+
+    await expectMissing(svgOriginal);
+    await expectMissing(svgThemed);
+
+    await rm(dir, { recursive: true, force: true });
+  });
+
+  it("enables the glow filter for --svg-themed on a glow:true theme, not on --svg-original", async () => {
+    const dir = await mkdtemp(join(tmpdir(), "drawio-themer-"));
+    const output = join(dir, "output.drawio");
+    const svgOriginal = join(dir, "before.svg");
+    const svgThemed = join(dir, "after.svg");
+
+    await applyCommand(SIMPLE_FIXTURE, {
+      ...baseOptions,
+      theme: "dracula",
+      output,
+      svgOriginal,
+      svgThemed,
+    });
+
+    const originalContents = await readFile(svgOriginal, "utf8");
+    const themedContents = await readFile(svgThemed, "utf8");
+    expect(originalContents).not.toContain("<filter");
+    expect(themedContents).toContain("<filter");
+
+    await rm(dir, { recursive: true, force: true });
+  });
+
+  it("does not enable the glow filter for a glow:false (default) theme", async () => {
+    const dir = await mkdtemp(join(tmpdir(), "drawio-themer-"));
+    const output = join(dir, "output.drawio");
+    const svgThemed = join(dir, "after.svg");
+
+    await applyCommand(SIMPLE_FIXTURE, { ...baseOptions, theme: "nord", output, svgThemed });
+
+    const themedContents = await readFile(svgThemed, "utf8");
+    expect(themedContents).not.toContain("<filter");
+
     await rm(dir, { recursive: true, force: true });
   });
 });

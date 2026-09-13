@@ -49,16 +49,19 @@ CI (`.github/workflows/checks.yml`) runs `make format-check`, `make lint`,
 and `make test` as three independent required checks (`Checks / Format`,
 `Checks / Lint`, `Checks / Tests`) on every pull request.
 
-## Previewing before/after `.drawio` diagrams in chat
+## Rendering before/after `.drawio` diagrams in chat
 
 There is no real draw.io renderer available offline (no internet, no
 draw.io/Electron CLI). Since issue #5, `apply` has built-in
 `--png-original`/`--png-themed` (alias `--png`) flags that render an
-offline, approximate SVG-to-PNG preview (rects, cylinders, edges clipped
-to node perimeters, labels, via `src/render/previewSvg.ts` +
+offline, approximate SVG-to-PNG rasterization (rects, cylinders, edges
+clipped to node perimeters, labels, via `src/render/svg.ts` +
 `src/render/rasterize.ts`, `@resvg/resvg-js`) — good enough for a quick
 visual diff, not a substitute for opening the file in real draw.io (no
-waypoints/groups/rotation/HTML labels).
+waypoints/groups/rotation/HTML labels). Since issue #9, the same
+`src/render/svg.ts` output can also be written directly as a real SVG
+file via `--svg-original`/`--svg-themed` (alias `--svg`), without the PNG
+rasterization step.
 
 Default workflow — a single command, no separate Python/SVG steps:
 
@@ -98,10 +101,10 @@ Notes that still apply:
   matches (looks "untouched").
 - Font handling: the theme's real `fontFamily` (e.g. `Inter`, a web
   font bundled by real draw.io) is _not_ installed in this offline
-  sandbox, so `src/render/previewSvg.ts` appends its own verified
+  sandbox, so `src/render/svg.ts` appends its own verified
   fallback stack (`Noto Sans, Helvetica Neue, Arial, sans-serif`) to
   every `font-family` it emits — do not edit a theme's `fontFamily`
-  token just to fix the local preview's look; fix the renderer's
+  token just to fix the local render's look; fix the renderer's
   fallback stack instead. Verify installed fonts with `fc-match
 "<name>"` before assuming a family renders (only `Noto Sans`,
   `Liberation Sans`, `DejaVu Sans` and the `Noto Sans <Script>` CJK/
@@ -112,7 +115,7 @@ Notes that still apply:
 - **Before claiming the render is correct, read the PNG back with an
   image-capable Read tool and visually inspect it** — do not infer
   correctness from the SVG source or from the CLI's `--verbose`
-  "themed" counts (they prove the theme compiled, not that the preview
+  "themed" counts (they prove the theme compiled, not that the render
   rendered it visibly).
 - Save PNGs under `.playwright-mcp/` (gitignored, for chat-only scratch
   work) or `docs/assets/` (committed, for README/docs) with a **fresh,

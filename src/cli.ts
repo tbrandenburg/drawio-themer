@@ -33,11 +33,19 @@ program
   .option("--no-theme-metadata", "Do not annotate generated file")
   .option(
     "--png-original <file>",
-    "Render the input (pre-theme) file as an approximate PNG preview (not a substitute for real draw.io)",
+    "Render the input (pre-theme) file as an approximate PNG render (not a substitute for real draw.io)",
   )
   .option(
     "--png, --png-themed <file>",
-    "Render the themed output as an approximate PNG preview (not a substitute for real draw.io)",
+    "Render the themed output as an approximate PNG render (not a substitute for real draw.io)",
+  )
+  .option(
+    "--svg-original <file>",
+    "Render the input (pre-theme) file as an approximate SVG render (not a substitute for real draw.io)",
+  )
+  .option(
+    "--svg, --svg-themed <file>",
+    "Render the themed output as an approximate SVG render (not a substitute for real draw.io)",
   )
   .action(async (input: string, options: Record<string, unknown>) => {
     const applyOptions: ApplyOptions = {
@@ -49,6 +57,8 @@ program
       themeMetadata: options.themeMetadata !== false,
       pngOriginal: options.pngOriginal as string | undefined,
       pngThemed: options.pngThemed as string | undefined,
+      svgOriginal: options.svgOriginal as string | undefined,
+      svgThemed: options.svgThemed as string | undefined,
     };
 
     try {

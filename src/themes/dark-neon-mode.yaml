@@ -1,6 +1,6 @@
 name: dark-neon-mode
 version: 1
-previewGlow: true # vibrant/neon dark theme - glow suits its aesthetic (issue #8)
+glow: true # vibrant/neon dark theme - glow suits its aesthetic (issue #8)
 # shadcn/ui-inspired dark theme with a single violet/cyan accent pair on a
 # near-black zinc scale (Tailwind zinc-950/900/800/700 + violet-500/300 +
 # cyan-400), so the accent colors read as a deliberate two-color glow
