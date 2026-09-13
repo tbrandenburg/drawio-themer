@@ -2,9 +2,9 @@
 
 Apply modern visual themes to existing draw.io / diagrams.net files.
 
-> Status: Phase 1 (CLI skeleton). The `apply` command currently performs a
-> byte-passthrough copy of the input file — no XML parsing or theming logic
-> is implemented yet.
+> Status: milestone-1 PoC. `apply` parses `.drawio` files (inline and
+> compressed pages, multi-page), classifies cells, and applies a YAML
+> theme's rules while preserving geometry, topology, and shape semantics.
 
 ## Usage
 
@@ -36,8 +36,23 @@ Options:
 
 ## Development
 
+Common tasks are wrapped in a `Makefile` with a dependency chain
+(`format-check` -> `lint` -> `build`/`test` -> `run` -> `release-*`), so
+each target re-verifies the gates before it:
+
 ```sh
-npm run build   # compile TypeScript
-npm run lint    # eslint
-npm test        # vitest
+make format         # prettier --write (mutates files)
+make format-check    # prettier --check (CI-safe, no mutation)
+make lint            # format-check + eslint
+make test            # lint + build + vitest
+make run             # test + `node dist/cli.js --version`
+make release-patch    # run + npm version patch + git push --follow-tags
+make release-minor    # run + npm version minor + git push --follow-tags
+make release-major    # run + npm version major + git push --follow-tags
 ```
+
+Plain npm scripts are also available (`npm run build|lint|test|format|format:check`).
+
+CI runs `make format-check`, `make lint`, and `make test` as separate
+required checks (`Checks / Format`, `Checks / Lint`, `Checks / Tests`)
+on every pull request.

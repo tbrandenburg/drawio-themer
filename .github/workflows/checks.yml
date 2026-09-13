@@ -1,0 +1,52 @@
+name: Checks
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+
+# Cancel superseded runs on the same branch/PR to save CI minutes.
+concurrency:
+  group: checks-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  format:
+    name: Format
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "24"
+          cache: npm
+      # `make format-check` (format -> lint -> test -> run chain's base
+      # gate) only runs `npm install` + `prettier --check` here - it
+      # never mutates files, so it is safe to run on every PR/push.
+      - run: make format-check
+
+  lint:
+    name: Lint
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "24"
+          cache: npm
+      # `make lint` depends on `format-check`, so this re-verifies
+      # formatting before running eslint (mirrors the local dev gate).
+      - run: make lint
+
+  tests:
+    name: Tests
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "24"
+          cache: npm
+      # `make test` depends on `lint` (which depends on `format-check`),
+      # so this is the full format -> lint -> build -> test gate.
+      - run: make test
