@@ -1,0 +1,41 @@
+{
+  "name": "drawio-themer",
+  "version": "0.1.0",
+  "description": "Apply modern visual themes to existing draw.io / diagrams.net files.",
+  "type": "module",
+  "engines": {
+    "node": ">=24"
+  },
+  "bin": {
+    "drawio-themer": "dist/cli.js"
+  },
+  "main": "dist/cli.js",
+  "files": [
+    "dist"
+  ],
+  "scripts": {
+    "build": "tsc && node -e \"require('fs').cpSync('src/themes','dist/themes',{recursive:true})\"",
+    "dev": "tsx src/cli.ts",
+    "lint": "eslint .",
+    "format": "prettier --write .",
+    "format:check": "prettier --check .",
+    "test": "vitest run"
+  },
+  "dependencies": {
+    "@xmldom/xmldom": "^0.9.12",
+    "commander": "^15.0.0",
+    "pako": "^3.0.2",
+    "yaml": "^2.9.1",
+    "zod": "^4.6.4"
+  },
+  "devDependencies": {
+    "@eslint/js": "^10.0.0",
+    "@types/node": "^24.13.4",
+    "eslint": "^10.0.0",
+    "prettier": "^3.6.2",
+    "tsx": "^4.20.6",
+    "typescript": "~5.9.0",
+    "typescript-eslint": "^8.70.0",
+    "vitest": "^5.0.0"
+  }
+}

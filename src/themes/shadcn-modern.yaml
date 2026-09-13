@@ -1,0 +1,96 @@
+name: shadcn-modern
+version: 1
+# Tuned against PRD section 14 "Default Bundled Theme: shadcn-modern"
+# (Phase 7). Manually validated against 3 representative fixture
+# diagrams (simple flowchart, service architecture, infra/cloud) -
+# see test/fixtures/manual/*.drawio.
+tokens:
+  background: "#ffffff"
+  foreground: "#18181b"
+  card: "#ffffff"
+  cardForeground: "#18181b"
+  # PRD section 14 offers "#fafafa or #f4f4f5" for the secondary/
+  # container surface. We pick #fafafa here (slightly cooler/lighter
+  # than the plain white card) so containers read as a distinct,
+  # subtle backdrop layer behind their child nodes rather than
+  # blending into the canvas - "neutral hierarchy over colorful boxes".
+  muted: "#fafafa"
+  # Secondary/container surface text per PRD section 14 ("Secondary/
+  # container surface" text: #3f3f46). Distinct from mutedForeground
+  # below (PRD's separate "Muted text" value, #71717a).
+  containerForeground: "#3f3f46"
+  # PRD section 14 "Muted text" value - not used by a built-in rule
+  # yet, but kept available (matches the PRD's own token name/example)
+  # for custom themes/rules that need a de-emphasized text color.
+  mutedForeground: "#71717a"
+  border: "#e4e4e7"
+  primary: "#4f46e5"
+  primaryForeground: "#ffffff"
+  edge: "#a1a1aa"
+  radius: 12
+  successSurface: "#f0fdf4"
+  successBorder: "#86efac"
+  successText: "#166534"
+  warningSurface: "#fffbeb"
+  warningBorder: "#fcd34d"
+  warningText: "#92400e"
+  errorSurface: "#fef2f2"
+  errorBorder: "#fca5a5"
+  errorText: "#991b1b"
+defaults:
+  fontFamily: Inter
+  fontSize: 14
+  strokeWidth: 1
+rules:
+  - selector:
+      kind: node
+    style:
+      fillColor: "$card"
+      strokeColor: "$border"
+      fontColor: "$cardForeground"
+      rounded: 1
+      arcSize: "$radius"
+      whiteSpace: wrap
+      shadow: 0
+  - selector:
+      kind: edge
+    style:
+      strokeColor: "$edge"
+      strokeWidth: 1.5
+      rounded: 1
+      endArrow: block
+      endFill: 1
+  - selector:
+      kind: container
+    style:
+      fillColor: "$muted"
+      strokeColor: "$border"
+      fontColor: "$containerForeground"
+  - selector:
+      kind: database
+    style:
+      fillColor: "#fafafa"
+      strokeColor: "#d4d4d8"
+  - selector:
+      tag: primary
+    style:
+      strokeColor: "$primary"
+      strokeWidth: 2
+  - selector:
+      tag: destructive
+    style:
+      fillColor: "$errorSurface"
+      strokeColor: "$errorBorder"
+      fontColor: "$errorText"
+  - selector:
+      tag: success
+    style:
+      fillColor: "$successSurface"
+      strokeColor: "$successBorder"
+      fontColor: "$successText"
+  - selector:
+      tag: warning
+    style:
+      fillColor: "$warningSurface"
+      strokeColor: "$warningBorder"
+      fontColor: "$warningText"
