@@ -1,0 +1,86 @@
+name: gruvbox
+version: 1
+# Inspired by the Gruvbox color palette by Pavel Pertsev
+# (https://github.com/morhetz/gruvbox) - not affiliated with or
+# endorsed by the original project. Warm retro browns/oranges on a
+# dark background.
+tokens:
+  background: "#282828" # bg0
+  card: "#3c3836" # bg1
+  cardForeground: "#ebdbb2" # fg1
+  muted: "#282828" # bg0
+  containerForeground: "#fabd2f" # bright yellow
+  border: "#504945" # bg2
+  primary: "#fe8019" # bright orange
+  primaryForeground: "#282828"
+  edge: "#d79921" # yellow
+  accentBorder: "#fe8019"
+  radius: 6
+  successSurface: "#3c3836"
+  successBorder: "#b8bb26" # bright green
+  successText: "#b8bb26"
+  warningSurface: "#3c3836"
+  warningBorder: "#fabd2f" # bright yellow
+  warningText: "#fabd2f"
+  errorSurface: "#3c3836"
+  errorBorder: "#fb4934" # bright red
+  errorText: "#fb4934"
+defaults:
+  fontFamily: Inter
+  fontSize: 14
+  strokeWidth: 1
+rules:
+  - selector:
+      kind: node
+    style:
+      fillColor: "$card"
+      strokeColor: "$border"
+      fontColor: "$cardForeground"
+      rounded: 1
+      arcSize: "$radius"
+      whiteSpace: wrap
+      shadow: 0
+  - selector:
+      kind: edge
+    style:
+      strokeColor: "$edge"
+      strokeWidth: 1.5
+      rounded: 1
+      endArrow: block
+      endFill: 1
+  - selector:
+      kind: container
+    style:
+      fillColor: "$muted"
+      strokeColor: "$accentBorder"
+      fontColor: "$containerForeground"
+  - selector:
+      kind: database
+    style:
+      fillColor: "$card"
+      strokeColor: "#8ec07c" # bright aqua
+      fontColor: "$cardForeground"
+      strokeWidth: 2
+  - selector:
+      tag: primary
+    style:
+      strokeColor: "$primary"
+      strokeWidth: 3
+  - selector:
+      tag: destructive
+    style:
+      fillColor: "$errorSurface"
+      strokeColor: "$errorBorder"
+      fontColor: "$errorText"
+  - selector:
+      tag: success
+    style:
+      fillColor: "$successSurface"
+      strokeColor: "$successBorder"
+      fontColor: "$successText"
+  - selector:
+      tag: warning
+    style:
+      fillColor: "$warningSurface"
+      strokeColor: "$warningBorder"
+      fontColor: "$warningText"

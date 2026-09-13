@@ -12,6 +12,14 @@ const MODULE_DIR = dirname(fileURLToPath(import.meta.url));
 const BUILTIN_THEMES: Record<string, string> = {
   "shadcn-modern": join(MODULE_DIR, "..", "themes", "shadcn-modern.yaml"),
   "dark-neon-mode": join(MODULE_DIR, "..", "themes", "dark-neon-mode.yaml"),
+  nord: join(MODULE_DIR, "..", "themes", "nord.yaml"),
+  dracula: join(MODULE_DIR, "..", "themes", "dracula.yaml"),
+  "solarized-light": join(MODULE_DIR, "..", "themes", "solarized-light.yaml"),
+  gruvbox: join(MODULE_DIR, "..", "themes", "gruvbox.yaml"),
+  "catppuccin-mocha": join(MODULE_DIR, "..", "themes", "catppuccin-mocha.yaml"),
+  monokai: join(MODULE_DIR, "..", "themes", "monokai.yaml"),
+  "github-light": join(MODULE_DIR, "..", "themes", "github-light.yaml"),
+  "high-contrast": join(MODULE_DIR, "..", "themes", "high-contrast.yaml"),
 };
 
 async function resolveThemeSource(theme: string): Promise<string> {

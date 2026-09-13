@@ -1,0 +1,86 @@
+name: dracula
+version: 1
+# Inspired by the Dracula color palette (https://draculatheme.com/) -
+# not affiliated with or endorsed by the Dracula project. Vibrant
+# purple/pink/green accents on a dark gray background.
+tokens:
+  background: "#282a36"
+  card: "#282a36"
+  cardForeground: "#f8f8f2"
+  muted: "#21222c"
+  containerForeground: "#bd93f9" # purple
+  border: "#44475a" # current line / selection gray
+  primary: "#bd93f9" # purple
+  primaryForeground: "#282a36"
+  edge: "#ff79c6" # pink
+  accentBorder: "#bd93f9"
+  radius: 8
+  successSurface: "#282a36"
+  successBorder: "#50fa7b" # green
+  successText: "#50fa7b"
+  warningSurface: "#282a36"
+  warningBorder: "#f1fa8c" # yellow
+  warningText: "#f1fa8c"
+  errorSurface: "#282a36"
+  errorBorder: "#ff5555" # red
+  errorText: "#ff5555"
+defaults:
+  fontFamily: Inter
+  fontSize: 14
+  strokeWidth: 1
+rules:
+  - selector:
+      kind: node
+    style:
+      fillColor: "$card"
+      strokeColor: "$border"
+      fontColor: "$cardForeground"
+      rounded: 1
+      arcSize: "$radius"
+      whiteSpace: wrap
+      shadow: 0
+  - selector:
+      kind: edge
+    style:
+      strokeColor: "$edge"
+      strokeWidth: 2
+      rounded: 1
+      endArrow: block
+      endFill: 1
+  - selector:
+      kind: container
+    style:
+      fillColor: "$muted"
+      strokeColor: "$accentBorder"
+      fontColor: "$containerForeground"
+  - selector:
+      kind: database
+    style:
+      fillColor: "$card"
+      strokeColor: "#8be9fd" # cyan accent
+      fontColor: "$cardForeground"
+      strokeWidth: 2
+  - selector:
+      tag: primary
+    style:
+      strokeColor: "$primary"
+      strokeWidth: 3
+      shadow: 1
+  - selector:
+      tag: destructive
+    style:
+      fillColor: "$errorSurface"
+      strokeColor: "$errorBorder"
+      fontColor: "$errorText"
+  - selector:
+      tag: success
+    style:
+      fillColor: "$successSurface"
+      strokeColor: "$successBorder"
+      fontColor: "$successText"
+  - selector:
+      tag: warning
+    style:
+      fillColor: "$warningSurface"
+      strokeColor: "$warningBorder"
+      fontColor: "$warningText"

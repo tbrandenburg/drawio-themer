@@ -1,0 +1,92 @@
+name: high-contrast
+version: 1
+# Accessibility-first theme aiming for WCAG AA/AAA contrast: pure
+# black/white base with a single high-visibility yellow accent
+# (mirrors common OS "high contrast" modes, e.g. Windows High
+# Contrast Black) - not affiliated with or endorsed by any specific
+# vendor's high-contrast mode implementation.
+tokens:
+  background: "#000000"
+  card: "#000000"
+  cardForeground: "#ffffff"
+  muted: "#000000"
+  containerForeground: "#ffff00" # yellow, high-visibility title
+  border: "#ffffff"
+  primary: "#ffff00" # yellow
+  primaryForeground: "#000000"
+  edge: "#ffffff"
+  accentBorder: "#ffff00"
+  radius: 0
+  successSurface: "#000000"
+  successBorder: "#00ff00"
+  successText: "#00ff00"
+  warningSurface: "#000000"
+  warningBorder: "#ffff00"
+  warningText: "#ffff00"
+  errorSurface: "#000000"
+  errorBorder: "#ff0000"
+  errorText: "#ff0000"
+defaults:
+  fontFamily: Inter
+  fontSize: 14
+  strokeWidth: 2
+rules:
+  - selector:
+      kind: node
+    style:
+      fillColor: "$card"
+      strokeColor: "$border"
+      fontColor: "$cardForeground"
+      rounded: 0
+      arcSize: "$radius"
+      whiteSpace: wrap
+      shadow: 0
+      strokeWidth: 2
+  - selector:
+      kind: edge
+    style:
+      strokeColor: "$edge"
+      strokeWidth: 2
+      rounded: 0
+      endArrow: block
+      endFill: 1
+  - selector:
+      kind: container
+    style:
+      fillColor: "$muted"
+      strokeColor: "$accentBorder"
+      fontColor: "$containerForeground"
+      strokeWidth: 3
+  - selector:
+      kind: database
+    style:
+      fillColor: "$card"
+      strokeColor: "$border"
+      fontColor: "$cardForeground"
+      strokeWidth: 3
+  - selector:
+      tag: primary
+    style:
+      strokeColor: "$primary"
+      strokeWidth: 4
+  - selector:
+      tag: destructive
+    style:
+      fillColor: "$errorSurface"
+      strokeColor: "$errorBorder"
+      fontColor: "$errorText"
+      strokeWidth: 3
+  - selector:
+      tag: success
+    style:
+      fillColor: "$successSurface"
+      strokeColor: "$successBorder"
+      fontColor: "$successText"
+      strokeWidth: 3
+  - selector:
+      tag: warning
+    style:
+      fillColor: "$warningSurface"
+      strokeColor: "$warningBorder"
+      fontColor: "$warningText"
+      strokeWidth: 3

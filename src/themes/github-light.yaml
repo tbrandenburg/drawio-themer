@@ -1,0 +1,86 @@
+name: github-light
+version: 1
+# Inspired by GitHub's default light UI palette
+# (https://primer.style/foundations/color) - not affiliated with or
+# endorsed by GitHub/Microsoft. Clean corporate/professional light
+# theme with GitHub's signature blue accent, distinct from
+# shadcn-modern's indigo.
+tokens:
+  background: "#ffffff"
+  card: "#ffffff"
+  cardForeground: "#1f2328" # fg.default
+  muted: "#f6f8fa" # canvas.subtle
+  containerForeground: "#57606a" # fg.muted
+  border: "#d0d7de" # border.default
+  primary: "#0969da" # accent.emphasis
+  primaryForeground: "#ffffff"
+  edge: "#57606a" # fg.muted
+  accentBorder: "#0969da"
+  radius: 6
+  successSurface: "#dafbe1"
+  successBorder: "#4ac26b"
+  successText: "#1a7f37"
+  warningSurface: "#fff8c5"
+  warningBorder: "#d4a72c"
+  warningText: "#9a6700"
+  errorSurface: "#ffebe9"
+  errorBorder: "#ff8182"
+  errorText: "#cf222e"
+defaults:
+  fontFamily: Inter
+  fontSize: 14
+  strokeWidth: 1
+rules:
+  - selector:
+      kind: node
+    style:
+      fillColor: "$card"
+      strokeColor: "$border"
+      fontColor: "$cardForeground"
+      rounded: 1
+      arcSize: "$radius"
+      whiteSpace: wrap
+      shadow: 0
+  - selector:
+      kind: edge
+    style:
+      strokeColor: "$edge"
+      strokeWidth: 1.5
+      rounded: 1
+      endArrow: block
+      endFill: 1
+  - selector:
+      kind: container
+    style:
+      fillColor: "$muted"
+      strokeColor: "$border"
+      fontColor: "$containerForeground"
+  - selector:
+      kind: database
+    style:
+      fillColor: "$muted"
+      strokeColor: "$border"
+      fontColor: "$cardForeground"
+  - selector:
+      tag: primary
+    style:
+      strokeColor: "$primary"
+      strokeWidth: 2
+  - selector:
+      tag: destructive
+    style:
+      fillColor: "$errorSurface"
+      strokeColor: "$errorBorder"
+      fontColor: "$errorText"
+  - selector:
+      tag: success
+    style:
+      fillColor: "$successSurface"
+      strokeColor: "$successBorder"
+      fontColor: "$successText"
+  - selector:
+      tag: warning
+    style:
+      fillColor: "$warningSurface"
+      strokeColor: "$warningBorder"
+      fontColor: "$warningText"
