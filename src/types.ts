@@ -32,3 +32,27 @@ export interface ParsedStyle {
   tokens: string[];
   properties: Record<string, string>;
 }
+
+/**
+ * Internal classification tags a cell can receive (PRD section 11,
+ * "Classification").
+ */
+export type CellClass = "image" | "text" | "container" | "database" | "edge" | "node";
+
+/**
+ * Result of classifying a single `<mxCell>` (see
+ * `src/drawio/classifier.ts`).
+ *
+ * `classes` lists every applicable class, most specific first (priority
+ * order per PRD Phase 4: image > text > container > database > edge >
+ * node); callers may match on any entry, and the first entry is the
+ * "primary" classification.
+ *
+ * `semanticTags` lists derived `role:`/`tag:` metadata tags from an
+ * enclosing `<object>`/`<UserObject>` wrapper, kept separate from
+ * `classes` because they describe author intent, not shape appearance.
+ */
+export interface CellClassification {
+  classes: CellClass[];
+  semanticTags: string[];
+}
