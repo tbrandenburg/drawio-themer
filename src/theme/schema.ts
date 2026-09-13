@@ -50,6 +50,16 @@ export const ThemeSchema = z
     tokens: z.record(z.string(), TokenValueSchema).optional().default({}),
     defaults: z.record(z.string(), StyleValueSchema).optional().default({}),
     rules: z.array(RuleSchema).optional().default([]),
+    /**
+     * Preview-rendering hint only (issue #8 follow-up): whether the offline
+     * `--png-themed` PNG preview should draw a soft glow filter around
+     * edges/cylinders/container borders. Not a style token, not consumed by
+     * the compiler/matcher/transform pipeline - purely cosmetic, and only
+     * suits vibrant/neon-leaning dark themes (e.g. `dark-neon-mode`,
+     * `dracula`, `monokai`); muted, light, retro, or accessibility-focused
+     * themes should leave this `false` (the default).
+     */
+    previewGlow: z.boolean().optional().default(false),
   })
   .strict();
 

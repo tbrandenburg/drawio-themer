@@ -19,6 +19,14 @@ describe("ThemeSchema", () => {
     expect(result.rules).toEqual([]);
   });
 
+  it("defaults previewGlow to false when omitted, and accepts an explicit true", () => {
+    const withoutFlag = ThemeSchema.parse({ name: "test", version: 1 });
+    expect(withoutFlag.previewGlow).toBe(false);
+
+    const withFlag = ThemeSchema.parse({ name: "test", version: 1, previewGlow: true });
+    expect(withFlag.previewGlow).toBe(true);
+  });
+
   it("accepts numeric token values", () => {
     const result = ThemeSchema.safeParse({
       name: "test",

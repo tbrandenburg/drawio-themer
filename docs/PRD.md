@@ -511,12 +511,22 @@ rules:
     style:
       strokeColor: "$primary"
       strokeWidth: 2
-  - selector:
+   - selector:
       tag: destructive
     style:
       fillColor: "#fef2f2"
       strokeColor: "$destructive"
       fontColor: "#991b1b"
+
+An optional top-level `previewGlow: true` field (default `false`) is a
+preview-rendering hint only, added alongside issue #5's `--png-themed`
+flag - it is not a style token and is never consumed by the
+compiler/matcher/transform pipeline. It tells the offline PNG preview
+renderer (`src/render/previewSvg.ts`) whether to draw a soft glow filter
+around edges/cylinders/container borders. Reserve it for vibrant/
+neon-leaning dark themes (`dark-neon-mode`, `dracula`, `monokai`); leave
+it unset/`false` for muted, light, retro, or accessibility-focused
+themes where a glow would clash with the intended aesthetic.
 
 ⸻
 

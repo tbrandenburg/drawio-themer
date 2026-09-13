@@ -1,5 +1,6 @@
 name: monokai
 version: 1
+previewGlow: true # vibrant/neon dark theme - glow suits its aesthetic (issue #8)
 # Inspired by the classic Monokai color scheme by Wimer Hazenberg
 # (https://monokai.pro/) - not affiliated with or endorsed by the
 # original project. Yellow/green/pink accents on a dark editor

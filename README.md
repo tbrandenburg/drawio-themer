@@ -146,6 +146,27 @@ matched against classified cells (`node`, `edge`, `container`,
 - [`high-contrast`](src/themes/high-contrast.yaml) — WCAG-AA-oriented
   black/white/yellow, accessibility-first
 
+Each preview below renders the same fixture
+(`docs/assets/fixtures/layered-architecture.drawio`) via
+`apply --png-themed` (see [Usage](#usage) above). Only the
+vibrant/neon-leaning dark themes (`dark-neon-mode`, `dracula`,
+`monokai`) opt into the preview's glow filter (`previewGlow: true` in
+their YAML) — muted, light, retro, or accessibility-focused themes
+render flat/crisp on purpose.
+
+| Theme              | Preview                                                      |
+| ------------------ | ------------------------------------------------------------ |
+| `shadcn-modern`    | ![shadcn-modern](docs/assets/themes/shadcn-modern.png)       |
+| `dark-neon-mode`   | ![dark-neon-mode](docs/assets/themes/dark-neon-mode.png)     |
+| `nord`             | ![nord](docs/assets/themes/nord.png)                         |
+| `dracula`          | ![dracula](docs/assets/themes/dracula.png)                   |
+| `solarized-light`  | ![solarized-light](docs/assets/themes/solarized-light.png)   |
+| `gruvbox`          | ![gruvbox](docs/assets/themes/gruvbox.png)                   |
+| `catppuccin-mocha` | ![catppuccin-mocha](docs/assets/themes/catppuccin-mocha.png) |
+| `monokai`          | ![monokai](docs/assets/themes/monokai.png)                   |
+| `github-light`     | ![github-light](docs/assets/themes/github-light.png)         |
+| `high-contrast`    | ![high-contrast](docs/assets/themes/high-contrast.png)       |
+
 See [`docs/PRD.md`](docs/PRD.md) for the full theme format and style
 allow-list.
 

@@ -1,5 +1,6 @@
 name: dracula
 version: 1
+previewGlow: true # vibrant/neon dark theme - glow suits its aesthetic (issue #8)
 # Inspired by the Dracula color palette (https://draculatheme.com/) -
 # not affiliated with or endorsed by the Dracula project. Vibrant
 # purple/pink/green accents on a dark gray background.

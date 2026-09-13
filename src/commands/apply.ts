@@ -121,7 +121,7 @@ export async function applyCommand(input: string, options: ApplyOptions): Promis
     const background = themeInput.tokens.background;
     await renderDrawioToPng(outputXml, options.pngThemed, {
       background: background !== undefined ? String(background) : undefined,
-      glow: "filter",
+      glow: themeInput.previewGlow ? "filter" : "none",
     });
   }
 

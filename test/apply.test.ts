@@ -234,7 +234,7 @@ describe("applyCommand --png-original / --png-themed", () => {
     await rm(dir, { recursive: true, force: true });
   });
 
-  it("enables the glow filter for --png-themed but not for --png-original", async () => {
+  it("enables the glow filter for --png-themed on a previewGlow:true theme, not on --png-original", async () => {
     const dir = await mkdtemp(join(tmpdir(), "drawio-themer-"));
     const output = join(dir, "output.drawio");
     const pngOriginal = join(dir, "before.png");
@@ -243,7 +243,7 @@ describe("applyCommand --png-original / --png-themed", () => {
 
     await applyCommand(SIMPLE_FIXTURE, {
       ...baseOptions,
-      theme: "nord",
+      theme: "dracula",
       output,
       pngOriginal,
       pngThemed,
@@ -254,6 +254,21 @@ describe("applyCommand --png-original / --png-themed", () => {
     const [, themedOptions] = spy.mock.calls[1]!;
     expect(originalOptions?.glow).not.toBe("filter");
     expect(themedOptions?.glow).toBe("filter");
+
+    spy.mockRestore();
+    await rm(dir, { recursive: true, force: true });
+  });
+
+  it("does not enable the glow filter for a previewGlow:false (default) theme", async () => {
+    const dir = await mkdtemp(join(tmpdir(), "drawio-themer-"));
+    const output = join(dir, "output.drawio");
+    const pngThemed = join(dir, "after.png");
+    const spy = vi.spyOn(previewSvg, "renderDrawioToSvg");
+
+    await applyCommand(SIMPLE_FIXTURE, { ...baseOptions, theme: "nord", output, pngThemed });
+
+    const [, themedOptions] = spy.mock.calls[0]!;
+    expect(themedOptions?.glow).not.toBe("filter");
 
     spy.mockRestore();
     await rm(dir, { recursive: true, force: true });
