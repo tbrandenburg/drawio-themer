@@ -71,4 +71,16 @@ describe("applyCommand", () => {
 
     await rm(dir, { recursive: true, force: true });
   });
+
+  it("resolves the dark-neon-mode built-in theme by name", async () => {
+    const dir = await mkdtemp(join(tmpdir(), "drawio-themer-"));
+    const output = join(dir, "output.drawio");
+
+    await applyCommand(SIMPLE_FIXTURE, { ...baseOptions, theme: "dark-neon-mode", output });
+
+    const doc = loadDrawioDocument(await readFile(output, "utf8"));
+    expect(doc.xmlDoc.documentElement?.getAttribute("drawio-themer")).toBe("dark-neon-mode");
+
+    await rm(dir, { recursive: true, force: true });
+  });
 });

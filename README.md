@@ -50,8 +50,10 @@ connections, embedded images/icons, shape types — untouched.
   `raw-deflate` + base64 compressed page content.
 - **Idempotent** — re-applying a theme to an already-themed file is a
   no-op.
-- **Bundled themes** — ships with `shadcn-modern`, a light,
-  shadcn/ui-inspired default; write your own in a few lines of YAML.
+- **Bundled themes** — ships with `shadcn-modern` (light,
+  shadcn/ui-inspired default) and `dark-neon-mode` (dark zinc base with
+  a violet/cyan glow accent, shown above); write your own in a few
+  lines of YAML.
 
 ## Install
 
@@ -90,9 +92,10 @@ Options:
 
 A theme is a YAML file of design tokens plus a small set of rules
 matched against classified cells (`node`, `edge`, `container`,
-`database`) or explicit tags. See
-[`src/themes/shadcn-modern.yaml`](src/themes/shadcn-modern.yaml) for a
-complete, documented example, and
+`database`) or explicit tags. Two are bundled —
+[`shadcn-modern`](src/themes/shadcn-modern.yaml) (light) and
+[`dark-neon-mode`](src/themes/dark-neon-mode.yaml) (dark, shown in the
+demo above) — and
 [`docs/PRD.md`](docs/PRD.md) for the full theme format and style
 allow-list.
 

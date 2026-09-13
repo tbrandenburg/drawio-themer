@@ -8,9 +8,10 @@ import { transformDrawioXml } from "../drawio/transform.js";
 
 const MODULE_DIR = dirname(fileURLToPath(import.meta.url));
 
-/** Built-in theme name -> bundled YAML file path (PRD section 6). Only one exists so far (YAGNI). */
+/** Built-in theme name -> bundled YAML file path (PRD section 6). */
 const BUILTIN_THEMES: Record<string, string> = {
   "shadcn-modern": join(MODULE_DIR, "..", "themes", "shadcn-modern.yaml"),
+  "dark-neon-mode": join(MODULE_DIR, "..", "themes", "dark-neon-mode.yaml"),
 };
 
 async function resolveThemeSource(theme: string): Promise<string> {

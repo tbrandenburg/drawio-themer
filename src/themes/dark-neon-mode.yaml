@@ -1,0 +1,61 @@
+name: dark-neon-mode
+version: 1
+# shadcn/ui-inspired dark theme with a single violet/cyan accent pair on a
+# near-black zinc scale (Tailwind zinc-950/900/800/700 + violet-500/300 +
+# cyan-400), so the accent colors read as a deliberate two-color glow
+# rather than a rainbow of clashing neons.
+tokens:
+  background: "#09090b" # zinc-950
+  card: "#18181b" # zinc-900
+  cardForeground: "#f4f4f5" # zinc-100
+  muted: "#111114" # near-black container backdrop, darker than card
+  containerForeground: "#c4b5fd" # violet-300 - layer titles read as accent
+  border: "#3f3f46" # zinc-700 - subtle, non-glowing default borders
+  primary: "#8b5cf6" # violet-500
+  primaryForeground: "#f4f4f5"
+  edge: "#22d3ee" # cyan-400 - single accent for all connectors
+  accentBorder: "#7c3aed" # violet-600 - container border glow
+  radius: 12
+defaults:
+  fontFamily: Inter
+  fontSize: 14
+  strokeWidth: 1
+rules:
+  - selector:
+      kind: node
+    style:
+      fillColor: "$card"
+      strokeColor: "$border"
+      fontColor: "$cardForeground"
+      rounded: 1
+      arcSize: "$radius"
+      whiteSpace: wrap
+      shadow: 0
+  - selector:
+      kind: edge
+    style:
+      strokeColor: "$edge"
+      strokeWidth: 2
+      rounded: 1
+      endArrow: block
+      endFill: 1
+  - selector:
+      kind: container
+    style:
+      fillColor: "$muted"
+      strokeColor: "$accentBorder"
+      fontColor: "$containerForeground"
+      strokeWidth: 1
+  - selector:
+      kind: database
+    style:
+      fillColor: "$card"
+      strokeColor: "$edge"
+      fontColor: "$cardForeground"
+      strokeWidth: 2
+  - selector:
+      tag: primary
+    style:
+      strokeColor: "$primary"
+      strokeWidth: 3
+      shadow: 1

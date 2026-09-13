@@ -78,6 +78,33 @@ node scripts/svg-to-png.mjs before.svg before.png
 node scripts/svg-to-png.mjs after.svg after.png
 ```
 
+Concrete, copy-pasteable, runnable-from-a-fresh-clone example (this is
+exactly how `docs/assets/demo-before.png`/`demo-after.png` — the README's
+hero image — were produced; `dark-neon-mode` is a bundled built-in theme
+registered in `src/commands/apply.ts`'s `BUILTIN_THEMES` map, and the
+fixture lives in `docs/assets/fixtures/`, so no external/temp files are
+needed to reproduce it):
+
+```bash
+make build
+node dist/cli.js apply docs/assets/fixtures/layered-architecture.drawio \
+  -t dark-neon-mode -o /tmp/demo-after.drawio
+python3 scripts/render-drawio-preview.py \
+  docs/assets/fixtures/layered-architecture.drawio docs/assets/demo-before.svg "#ffffff"
+python3 scripts/render-drawio-preview.py \
+  /tmp/demo-after.drawio docs/assets/demo-after.svg "#09090b" --filter-glow
+node scripts/svg-to-png.mjs docs/assets/demo-before.svg docs/assets/demo-before.png
+node scripts/svg-to-png.mjs docs/assets/demo-after.svg docs/assets/demo-after.png
+rm docs/assets/demo-before.svg docs/assets/demo-after.svg  # scratch, not committed
+```
+
+If you add a new bundled theme for a demo image like this, register it in
+`BUILTIN_THEMES` (`src/commands/apply.ts`) so `-t <name>` resolves it by
+name — a theme file sitting only in `src/themes/` is not enough, and a
+theme/fixture living only in `/tmp` makes the recipe above
+unreproducible for the next person (this was caught and fixed after the
+first draft of this doc referenced now-deleted `/tmp` scratch files).
+
 Notes that still apply regardless of rasterizer:
 
 - **If the fixture uses layer/swimlane boxes that should theme as
