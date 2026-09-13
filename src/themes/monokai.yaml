@@ -1,0 +1,87 @@
+name: monokai
+version: 1
+# Inspired by the classic Monokai color scheme by Wimer Hazenberg
+# (https://monokai.pro/) - not affiliated with or endorsed by the
+# original project. Yellow/green/pink accents on a dark editor
+# background.
+tokens:
+  background: "#272822"
+  card: "#3e3d32"
+  cardForeground: "#f8f8f2"
+  muted: "#272822"
+  containerForeground: "#e6db74" # yellow
+  border: "#75715e" # comment gray
+  primary: "#66d9ef" # blue
+  primaryForeground: "#272822"
+  edge: "#fd971f" # orange
+  accentBorder: "#f92672" # pink
+  radius: 6
+  successSurface: "#3e3d32"
+  successBorder: "#a6e22e" # green
+  successText: "#a6e22e"
+  warningSurface: "#3e3d32"
+  warningBorder: "#e6db74" # yellow
+  warningText: "#e6db74"
+  errorSurface: "#3e3d32"
+  errorBorder: "#f92672" # pink/red
+  errorText: "#f92672"
+defaults:
+  fontFamily: Inter
+  fontSize: 14
+  strokeWidth: 1
+rules:
+  - selector:
+      kind: node
+    style:
+      fillColor: "$card"
+      strokeColor: "$border"
+      fontColor: "$cardForeground"
+      rounded: 1
+      arcSize: "$radius"
+      whiteSpace: wrap
+      shadow: 0
+  - selector:
+      kind: edge
+    style:
+      strokeColor: "$edge"
+      strokeWidth: 2
+      rounded: 1
+      endArrow: block
+      endFill: 1
+  - selector:
+      kind: container
+    style:
+      fillColor: "$muted"
+      strokeColor: "$accentBorder"
+      fontColor: "$containerForeground"
+  - selector:
+      kind: database
+    style:
+      fillColor: "$card"
+      strokeColor: "$primary"
+      fontColor: "$cardForeground"
+      strokeWidth: 2
+  - selector:
+      tag: primary
+    style:
+      strokeColor: "$primary"
+      strokeWidth: 3
+      shadow: 1
+  - selector:
+      tag: destructive
+    style:
+      fillColor: "$errorSurface"
+      strokeColor: "$errorBorder"
+      fontColor: "$errorText"
+  - selector:
+      tag: success
+    style:
+      fillColor: "$successSurface"
+      strokeColor: "$successBorder"
+      fontColor: "$successText"
+  - selector:
+      tag: warning
+    style:
+      fillColor: "$warningSurface"
+      strokeColor: "$warningBorder"
+      fontColor: "$warningText"

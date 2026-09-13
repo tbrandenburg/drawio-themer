@@ -50,10 +50,12 @@ connections, embedded images/icons, shape types — untouched.
   `raw-deflate` + base64 compressed page content.
 - **Idempotent** — re-applying a theme to an already-themed file is a
   no-op.
-- **Bundled themes** — ships with `shadcn-modern` (light,
-  shadcn/ui-inspired default) and `dark-neon-mode` (dark zinc base with
-  a violet/cyan glow accent, shown above); write your own in a few
-  lines of YAML.
+- **Bundled themes** — ships with 10 built-in themes covering light
+  and dark, muted and vibrant, professional and accessibility-first
+  styles (`shadcn-modern`, `dark-neon-mode`, `nord`, `dracula`,
+  `solarized-light`, `gruvbox`, `catppuccin-mocha`, `monokai`,
+  `github-light`, `high-contrast`); write your own in a few lines of
+  YAML.
 
 ## Install
 
@@ -105,11 +107,30 @@ Options:
 
 A theme is a YAML file of design tokens plus a small set of rules
 matched against classified cells (`node`, `edge`, `container`,
-`database`) or explicit tags. Two are bundled —
-[`shadcn-modern`](src/themes/shadcn-modern.yaml) (light) and
-[`dark-neon-mode`](src/themes/dark-neon-mode.yaml) (dark, shown in the
-demo above) — and
-[`docs/PRD.md`](docs/PRD.md) for the full theme format and style
+`database`) or explicit tags. Ten themes are bundled:
+
+- [`shadcn-modern`](src/themes/shadcn-modern.yaml) — light,
+  shadcn/ui-inspired default
+- [`dark-neon-mode`](src/themes/dark-neon-mode.yaml) — dark zinc base
+  with a violet/cyan glow accent (shown in the demo above)
+- [`nord`](src/themes/nord.yaml) — cool arctic blues, muted,
+  professional-dark
+- [`dracula`](src/themes/dracula.yaml) — vibrant purple/pink/green
+  dark
+- [`solarized-light`](src/themes/solarized-light.yaml) — warm cream,
+  low-contrast, eye-friendly
+- [`gruvbox`](src/themes/gruvbox.yaml) — warm retro browns/oranges,
+  dark
+- [`catppuccin-mocha`](src/themes/catppuccin-mocha.yaml) — soft
+  pastel dark
+- [`monokai`](src/themes/monokai.yaml) — classic yellow/green/pink
+  code-editor dark
+- [`github-light`](src/themes/github-light.yaml) — clean
+  corporate/professional light
+- [`high-contrast`](src/themes/high-contrast.yaml) — WCAG-AA-oriented
+  black/white/yellow, accessibility-first
+
+See [`docs/PRD.md`](docs/PRD.md) for the full theme format and style
 allow-list.
 
 ## Development

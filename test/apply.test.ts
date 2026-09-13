@@ -83,4 +83,27 @@ describe("applyCommand", () => {
 
     await rm(dir, { recursive: true, force: true });
   });
+
+  const ADDITIONAL_BUILTIN_THEMES = [
+    "nord",
+    "dracula",
+    "solarized-light",
+    "gruvbox",
+    "catppuccin-mocha",
+    "monokai",
+    "github-light",
+    "high-contrast",
+  ];
+
+  it.each(ADDITIONAL_BUILTIN_THEMES)("resolves the %s built-in theme by name", async (theme) => {
+    const dir = await mkdtemp(join(tmpdir(), "drawio-themer-"));
+    const output = join(dir, "output.drawio");
+
+    await applyCommand(SIMPLE_FIXTURE, { ...baseOptions, theme, output });
+
+    const doc = loadDrawioDocument(await readFile(output, "utf8"));
+    expect(doc.xmlDoc.documentElement?.getAttribute("drawio-themer")).toBe(theme);
+
+    await rm(dir, { recursive: true, force: true });
+  });
 });

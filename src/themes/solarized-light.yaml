@@ -1,0 +1,86 @@
+name: solarized-light
+version: 1
+# Inspired by the Solarized color palette by Ethan Schoonover
+# (https://ethanschoonover.com/solarized/) - not affiliated with or
+# endorsed by the original project. Warm cream background with the
+# famously low-contrast, eye-friendly accent set.
+tokens:
+  background: "#fdf6e3" # base3
+  card: "#fdf6e3" # base3
+  cardForeground: "#657b83" # base00
+  muted: "#eee8d5" # base2
+  containerForeground: "#586e75" # base01
+  border: "#93a1a1" # base1
+  primary: "#268bd2" # blue
+  primaryForeground: "#fdf6e3"
+  edge: "#657b83" # base00
+  accentBorder: "#2aa198" # cyan
+  radius: 6
+  successSurface: "#eee8d5"
+  successBorder: "#859900" # green
+  successText: "#586e75"
+  warningSurface: "#eee8d5"
+  warningBorder: "#b58900" # yellow
+  warningText: "#586e75"
+  errorSurface: "#eee8d5"
+  errorBorder: "#dc322f" # red
+  errorText: "#586e75"
+defaults:
+  fontFamily: Inter
+  fontSize: 14
+  strokeWidth: 1
+rules:
+  - selector:
+      kind: node
+    style:
+      fillColor: "$card"
+      strokeColor: "$border"
+      fontColor: "$cardForeground"
+      rounded: 1
+      arcSize: "$radius"
+      whiteSpace: wrap
+      shadow: 0
+  - selector:
+      kind: edge
+    style:
+      strokeColor: "$edge"
+      strokeWidth: 1.5
+      rounded: 1
+      endArrow: block
+      endFill: 1
+  - selector:
+      kind: container
+    style:
+      fillColor: "$muted"
+      strokeColor: "$border"
+      fontColor: "$containerForeground"
+  - selector:
+      kind: database
+    style:
+      fillColor: "$muted"
+      strokeColor: "$accentBorder"
+      fontColor: "$cardForeground"
+      strokeWidth: 1.5
+  - selector:
+      tag: primary
+    style:
+      strokeColor: "$primary"
+      strokeWidth: 2
+  - selector:
+      tag: destructive
+    style:
+      fillColor: "$errorSurface"
+      strokeColor: "$errorBorder"
+      fontColor: "$errorText"
+  - selector:
+      tag: success
+    style:
+      fillColor: "$successSurface"
+      strokeColor: "$successBorder"
+      fontColor: "$successText"
+  - selector:
+      tag: warning
+    style:
+      fillColor: "$warningSurface"
+      strokeColor: "$warningBorder"
+      fontColor: "$warningText"
