@@ -78,8 +78,12 @@ function printVerboseDetails(details: VerboseCellDetail[]): void {
  * issue #5). Shared by both `--png-original` and `--png-themed` so there
  * is exactly one code path from drawio XML to PNG bytes.
  */
-async function renderDrawioToPng(drawioXml: string, outputPath: string): Promise<void> {
-  const svg = renderDrawioToSvg(drawioXml);
+async function renderDrawioToPng(
+  drawioXml: string,
+  outputPath: string,
+  background?: string,
+): Promise<void> {
+  const svg = renderDrawioToSvg(drawioXml, background ? { background } : undefined);
   const png = rasterizeSvgToPng(svg);
   await writeFile(outputPath, png);
 }
@@ -113,7 +117,12 @@ export async function applyCommand(input: string, options: ApplyOptions): Promis
     await renderDrawioToPng(contents, options.pngOriginal);
   }
   if (options.pngThemed) {
-    await renderDrawioToPng(outputXml, options.pngThemed);
+    const background = themeInput.tokens.background;
+    await renderDrawioToPng(
+      outputXml,
+      options.pngThemed,
+      background !== undefined ? String(background) : undefined,
+    );
   }
 
   if (options.dryRun) {
