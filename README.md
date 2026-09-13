@@ -100,7 +100,23 @@ Options:
       --format <format>     preserve | compressed | uncompressed
       --verbose             Show matching/transformation details
       --no-theme-metadata   Do not annotate generated file
+      --png-original <file> Render the input (pre-theme) file as an
+                            approximate PNG preview
+      --png-themed, --png <file>
+                            Render the themed output as an approximate
+                            PNG preview
   -h, --help
+```
+
+PNG previews are an offline, approximate rasterization of the diagram
+(rects, database cylinders, edges clipped to node borders, labels) meant
+for a quick visual check — not a substitute for opening the file in real
+draw.io (no waypoints, groups, rotation, or HTML labels support):
+
+```sh
+node dist/cli.js apply input.drawio -t dark-neon-mode -o output.drawio \
+  --png-original before.png \
+  --png-themed after.png
 ```
 
 ## Themes

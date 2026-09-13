@@ -31,6 +31,14 @@ program
   .option("--format <format>", "preserve | compressed | uncompressed", parseFormat, "preserve")
   .option("--verbose", "Show matching/transformation details", false)
   .option("--no-theme-metadata", "Do not annotate generated file")
+  .option(
+    "--png-original <file>",
+    "Render the input (pre-theme) file as an approximate PNG preview (not a substitute for real draw.io)",
+  )
+  .option(
+    "--png, --png-themed <file>",
+    "Render the themed output as an approximate PNG preview (not a substitute for real draw.io)",
+  )
   .action(async (input: string, options: Record<string, unknown>) => {
     const applyOptions: ApplyOptions = {
       theme: options.theme as string,
@@ -39,6 +47,8 @@ program
       format: options.format as OutputFormat,
       verbose: Boolean(options.verbose),
       themeMetadata: options.themeMetadata !== false,
+      pngOriginal: options.pngOriginal as string | undefined,
+      pngThemed: options.pngThemed as string | undefined,
     };
 
     try {
