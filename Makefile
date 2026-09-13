@@ -1,4 +1,4 @@
-.PHONY: install format format-check lint build test run release release-patch release-minor release-major clean
+.PHONY: install format format-check lint build test run install-global release release-patch release-minor release-major clean
 
 # node_modules is a real prerequisite (make treats it as a file/dir
 # target), so `install` only re-runs `npm install` when package.json or
@@ -29,6 +29,13 @@ test: lint build
 
 run: test
 	node dist/cli.js --version
+
+# Installs the built CLI globally (npm link-equivalent via the package's
+# own "bin" entry), so `drawio-themer` is available on PATH afterward -
+# depends on `build` (not `test`/`run`) so it doesn't require a version
+# bump or re-running the full gate just to install locally.
+install-global: build
+	npm install -g .
 
 # release-{patch,minor,major}: full format/lint/test/build/run gate
 # must pass before `npm version` bumps package.json, commits, and tags,

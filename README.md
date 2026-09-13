@@ -62,7 +62,20 @@ npm install
 npm run build
 ```
 
+To use the `drawio-themer` command directly (instead of `node dist/cli.js`),
+install it globally after building:
+
+```sh
+make install-global
+```
+
 ## Usage
+
+```sh
+drawio-themer apply input.drawio -t shadcn-modern -o output.drawio
+```
+
+Or without a global install, run the built CLI directly:
 
 ```sh
 node dist/cli.js apply input.drawio -t shadcn-modern -o output.drawio
@@ -111,6 +124,7 @@ make format-check    # prettier --check (CI-safe, no mutation)
 make lint            # format-check + eslint
 make test            # lint + build + vitest
 make run             # test + `node dist/cli.js --version`
+make install-global  # build + `npm install -g .` (adds `drawio-themer` to PATH)
 make release-patch   # run + npm version patch + git push --follow-tags
 make release-minor   # run + npm version minor + git push --follow-tags
 make release-major   # run + npm version major + git push --follow-tags
