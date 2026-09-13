@@ -12,7 +12,7 @@
 import { z } from "zod";
 import type { CellClass } from "../types.js";
 
-const cellClassValues = ["node", "edge", "text", "container", "image", "database"] as const satisfies readonly CellClass[];
+const cellClassValues = ["node", "edge", "text", "container", "image", "database", "group"] as const satisfies readonly CellClass[];
 
 const TokenValueSchema = z.union([z.string(), z.number()]);
 

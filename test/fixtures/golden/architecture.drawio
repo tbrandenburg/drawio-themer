@@ -1,0 +1,35 @@
+<mxfile host="Electron" agent="manual-fixture" version="24.0.0">
+  <diagram id="page-1-frontend" name="Frontend">
+    <mxGraphModel dx="800" dy="600" grid="1" gridSize="10" guides="1" tooltips="1" connect="1" arrows="1" fold="1" page="1" pageScale="1" pageWidth="1000" pageHeight="800" math="0" shadow="0">
+      <root>
+        <mxCell id="0" />
+        <mxCell id="1" parent="0" />
+        <mxCell id="grp1" value="" style="group" vertex="1" connectable="0" parent="1">
+          <mxGeometry x="40" y="40" width="240" height="120" as="geometry" />
+        </mxCell>
+        <mxCell id="grpChild1" value="Group Child A" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#dae8fc;strokeColor=#6c8ebf;" vertex="1" parent="grp1">
+          <mxGeometry x="0" y="0" width="100" height="60" as="geometry" />
+        </mxCell>
+        <mxCell id="grpChild2" value="Group Child B" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#dae8fc;strokeColor=#6c8ebf;" vertex="1" parent="grp1">
+          <mxGeometry x="140" y="0" width="100" height="60" as="geometry" />
+        </mxCell>
+        <mxCell id="lane1" value="Frontend Lane" style="swimlane;whiteSpace=wrap;html=1;fillColor=#f5f5f5;strokeColor=#666666;startSize=30;" vertex="1" parent="1">
+          <mxGeometry x="320" y="40" width="280" height="200" as="geometry" />
+        </mxCell>
+        <mxCell id="laneChild1" value="Web App" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#d5e8d4;strokeColor=#82b366;" vertex="1" parent="lane1">
+          <mxGeometry x="20" y="50" width="100" height="50" as="geometry" />
+        </mxCell>
+        <mxCell id="laneChild2" value="Mobile App" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#d5e8d4;strokeColor=#82b366;" vertex="1" parent="lane1">
+          <mxGeometry x="150" y="50" width="100" height="50" as="geometry" />
+        </mxCell>
+        <mxCell id="icon1" value="" style="shape=image;image=https://example.com/icon.png;html=1;imageAspect=1;" vertex="1" parent="1">
+          <mxGeometry x="40" y="220" width="48" height="48" as="geometry" />
+        </mxCell>
+        <mxCell id="htmlLabel1" value="&lt;b&gt;Bold Label&lt;/b&gt;&lt;br&gt;&lt;i&gt;italic detail&lt;/i&gt;" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#ffffff;strokeColor=#000000;" vertex="1" parent="1">
+          <mxGeometry x="140" y="220" width="160" height="60" as="geometry" />
+        </mxCell>
+      </root>
+    </mxGraphModel>
+  </diagram>
+  <diagram id="page-2-backend" name="Backend">zVbLbtswEPwa3iXSMXSNnDgt0CJBjaJnilxTbChRWNKvfn0hi7QlK7GNNClyk2YXQ+7MrCDCZtX2AXlTfrcSDKGJ3BJ2RyjNkoRQ2gK7DphGQKGWHZQegYX+AwGMbSstwQ0avbXG62YIClvXIPwA44h2M2xbWjM8teEKRsBCcDNGf2npy3i7OEZb+AJalf5k4IrH5gC4kku76UHsniS3pH1OCJuhtX4AxUK1nYFpNY16BT5C59f1H0ZAqP3bKGQRSNbcrIIyT9Z5heDCdH4XJXMlb9pHsTO6loCMsHxTag+Lhou2sEHeEJaXvjKE3aWE5UttzMwai3sGJjlkS0FY7jzaZ+hVpiKDYklYXthVLUF+KyJFwcWzwhZ9XHmjawi46yKV3hCWhxkAPWxf1SY99eZUmwewFXjcEZoElkkWBA0hTyfhfXOMTGwpe2FJY1h4SKk6UJ+zh9B5cOil6k8H+Fj8bpeBJoYXYDruXBuja0Vocvv0tTsA7cEzwLUWEBaMq3CfBnXF95MK1F4LbrqOmAu3FhflClHqBQQ774JB7x6Nf3f5nNcpvez1AeubPX2D19c5Tui8Z/pVC+3Wgo42+gc0Fn2XkUU/EO/l3Q1kcvKSdxkt2HT6gRvKkv/o2iW/Rm5AOtIZpIJFeLXoS6tszc39Ec2PTiRD1TuuluC8gjRxdoUChqvcrj8q8IMP/5ViIxju9Xp47scqRz+FcvTTKrfHe/8Woa/3s7bH/wI=</diagram>
+</mxfile>

@@ -26,6 +26,11 @@ describe("classifyCell", () => {
     expect(classifyCell(cell)).toEqual({ classes: ["edge"], semanticTags: [] });
   });
 
+  it("classifies a draw.io invisible group cell as group, not node (Golden Rule: Preserve Semantics)", () => {
+    const { cell } = parseCell('<mxCell id="grp1" value="" style="group" vertex="1" connectable="0"/>');
+    expect(classifyCell(cell)).toEqual({ classes: ["group"], semanticTags: [] });
+  });
+
   it("classifies a swimlane as a container", () => {
     const { cell } = parseCell(
       '<mxCell id="3" vertex="1" style="swimlane;whiteSpace=wrap;html=1;"/>',

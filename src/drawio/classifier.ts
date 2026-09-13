@@ -25,10 +25,19 @@ function propertyStartsWith(properties: Record<string, string>, key: string, pre
  * `<UserObject role="service" tags="backend critical"><mxCell .../></UserObject>`).
  *
  * Classes are returned in priority order per PRD Phase 4:
- * image > text > container > database > edge > node. A cell may match
- * several classes (e.g. an edge that is also styled as text); all
+ * image > text > container > database > edge > group > node. A cell may
+ * match several classes (e.g. an edge that is also styled as text); all
  * applicable classes are returned so later phases can match on any of
  * them, with the first entry treated as the "primary" classification.
+ *
+ * `group` (not in the PRD's original Phase 4 list) was added to prevent
+ * draw.io's common invisible structural grouping cells
+ * (`style="group"`, `connectable="0"`, no shape/fill of their own) from
+ * silently falling through to the generic "node" classification and
+ * receiving visible fill/border theming - a real "Preserve Semantics"
+ * (PRD section 9) violation found via Phase 8 golden fixture testing.
+ * No bundled theme rule targets `kind: group` by default, so these
+ * cells remain untouched unless a theme opts in.
  */
 export function classifyCell(cell: XmlElement, wrapper?: XmlElement): CellClassification {
   const style = cell.getAttribute("style") ?? "";
@@ -62,12 +71,15 @@ export function classifyCell(cell: XmlElement, wrapper?: XmlElement): CellClassi
     propertyStartsWith(properties, "shape", "cylinder3") ||
     propertyStartsWith(properties, "shape", "cylinder");
 
+  const isGroup = hasToken(tokens, "group");
+
   const classes: CellClass[] = [];
   if (isImage) classes.push("image");
   if (isText) classes.push("text");
   if (isContainer) classes.push("container");
   if (isDatabase) classes.push("database");
   if (isEdge) classes.push("edge");
+  if (isGroup) classes.push("group");
   // Generic node fallback: a vertex not otherwise classified still
   // receives "node" so downstream matchers always have a class to target.
   if (isVertex && classes.length === 0) classes.push("node");

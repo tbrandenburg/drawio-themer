@@ -31,6 +31,7 @@ const CLASS_STAT_ORDER: Array<{ cls: CellClass; label: string }> = [
   { cls: "edge", label: "Edges" },
   { cls: "text", label: "Text cells" },
   { cls: "image", label: "Images" },
+  { cls: "group", label: "Groups" },
 ];
 
 function printStats(stats: TransformStats, output: string): void {

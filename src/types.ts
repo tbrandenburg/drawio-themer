@@ -37,7 +37,7 @@ export interface ParsedStyle {
  * Internal classification tags a cell can receive (PRD section 11,
  * "Classification").
  */
-export type CellClass = "image" | "text" | "container" | "database" | "edge" | "node";
+export type CellClass = "image" | "text" | "container" | "database" | "edge" | "node" | "group";
 
 /**
  * Result of classifying a single `<mxCell>` (see
