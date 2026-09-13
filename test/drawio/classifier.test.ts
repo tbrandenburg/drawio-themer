@@ -53,6 +53,7 @@ describe("classifyCell", () => {
     );
     const result = classifyCell(cell);
     expect(result.classes).toEqual(["database"]);
+    expect(result.shape).toBe("cylinder3");
   });
 
   it("classifies a shape=cylinder cell as a database", () => {
@@ -98,5 +99,12 @@ describe("classifyCell", () => {
       '<mxCell id="8" vertex="1" style="shape=image;image=foo.png;container=1;"/>',
     );
     expect(classifyCell(cell).classes[0]).toBe("image");
+  });
+
+  it("leaves shape undefined when the cell has no shape= style property", () => {
+    const { cell } = parseCell(
+      '<mxCell id="9" vertex="1" style="rounded=0;whiteSpace=wrap;html=1;"/>',
+    );
+    expect(classifyCell(cell).shape).toBeUndefined();
   });
 });
