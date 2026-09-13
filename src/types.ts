@@ -18,3 +18,17 @@ export interface ApplyOptions {
   verbose: boolean;
   themeMetadata: boolean;
 }
+
+/**
+ * Structured representation of a draw.io mxCell `style` attribute
+ * (PRD section 8, "draw.io Style Model").
+ *
+ * A style string is a semicolon-delimited list of fragments. Each fragment
+ * is either:
+ *  - a `key=value` pair, stored in `properties`, or
+ *  - a bare token with no `=`, stored in `tokens`.
+ */
+export interface ParsedStyle {
+  tokens: string[];
+  properties: Record<string, string>;
+}
