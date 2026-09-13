@@ -59,7 +59,10 @@ rules:
       fillColor: "$card"
       strokeColor: "$border"
       fontColor: "$cardForeground"
-      strokeWidth: 1.5
+      rounded: 1
+      arcSize: "$radius"
+      whiteSpace: wrap
+      shadow: 0
   - selector:
       tag: primary
     style:

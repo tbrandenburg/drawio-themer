@@ -170,8 +170,12 @@ describe("golden integration: per-item PRD Phase 8 checklist assertions", () => 
 
     const dbStyle = findCellStyle(xml, "db1")!;
     expect(dbStyle).toContain("shape=cylinder3");
-    expect(dbStyle).toContain("fillColor=#fafafa");
-    expect(dbStyle).toContain("strokeColor=#d4d4d8");
+    // database shapes are styled identically to regular nodes (fillColor
+    // $card / strokeColor $border) - only their geometry (the cylinder)
+    // distinguishes them visually, per the "no bundled theme visualizes
+    // databases differently" decision.
+    expect(dbStyle).toContain("fillColor=#ffffff");
+    expect(dbStyle).toContain("strokeColor=#e4e4e7");
   });
 
   it("keeps edgeStyle=orthogonalEdgeStyle on edges and themes them with edge colors", async () => {

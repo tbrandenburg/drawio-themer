@@ -504,8 +504,13 @@ rules:
   - selector:
       kind: database
     style:
-      fillColor: "#fafafa"
-      strokeColor: "#d4d4d8"
+      fillColor: "$card"
+      strokeColor: "$border"
+      fontColor: "$foreground"
+      rounded: 1
+      arcSize: "$radius"
+      whiteSpace: wrap
+      shadow: 0
   - selector:
       tag: primary
     style:

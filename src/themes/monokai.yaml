@@ -59,9 +59,12 @@ rules:
       kind: database
     style:
       fillColor: "$card"
-      strokeColor: "$primary"
+      strokeColor: "$border"
       fontColor: "$cardForeground"
-      strokeWidth: 2
+      rounded: 1
+      arcSize: "$radius"
+      whiteSpace: wrap
+      shadow: 0
   - selector:
       tag: primary
     style:

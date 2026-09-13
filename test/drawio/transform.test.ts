@@ -107,7 +107,9 @@ describe("transformDrawioXml", () => {
     )!;
 
     expect(cell.getAttribute("style")).toContain("shape=cylinder3");
-    expect(cell.getAttribute("style")).toContain("fillColor=#fafafa");
+    // database shapes are themed identically to regular nodes - only the
+    // cylinder geometry marks them as a database, not a distinct color.
+    expect(cell.getAttribute("style")).toContain("fillColor=#ffffff");
     expect(result.stats.themedByClass.database).toBe(1);
   });
 
