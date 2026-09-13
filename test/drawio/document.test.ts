@@ -125,7 +125,8 @@ describe("serializeDrawioDocument", () => {
     const xml = await readFixture("simple.drawio");
     const doc = loadDrawioDocument(xml);
     const [page] = getPages(doc);
-    const newModel = '<mxGraphModel><root><mxCell id="0" /><mxCell id="1" parent="0" /></root></mxGraphModel>';
+    const newModel =
+      '<mxGraphModel><root><mxCell id="0" /><mxCell id="1" parent="0" /></root></mxGraphModel>';
 
     page?.setModelXml(newModel);
     const serialized = serializeDrawioDocument(doc);
@@ -135,14 +136,17 @@ describe("serializeDrawioDocument", () => {
 
     const reloaded = getPages(loadDrawioDocument(serialized));
     expect(reloaded[0]?.compressed).toBe(false);
-    expect(reloaded[0]?.getModelXml().replace(/\s+\/>/g, "/>")).toBe(newModel.replace(/\s+\/>/g, "/>"));
+    expect(reloaded[0]?.getModelXml().replace(/\s+\/>/g, "/>")).toBe(
+      newModel.replace(/\s+\/>/g, "/>"),
+    );
   });
 
   it("setModelXml on a compressed page keeps it compressed after re-serialization", async () => {
     const xml = await readFixture("compressed.drawio");
     const doc = loadDrawioDocument(xml);
     const [page] = getPages(doc);
-    const newModel = '<mxGraphModel><root><mxCell id="0" /><mxCell id="1" parent="0" /></root></mxGraphModel>';
+    const newModel =
+      '<mxGraphModel><root><mxCell id="0" /><mxCell id="1" parent="0" /></root></mxGraphModel>';
 
     page?.setModelXml(newModel);
     const serialized = serializeDrawioDocument(doc);

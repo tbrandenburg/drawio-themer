@@ -13,7 +13,11 @@ function hasToken(tokens: string[], token: string): boolean {
   return tokens.includes(token);
 }
 
-function propertyStartsWith(properties: Record<string, string>, key: string, prefix: string): boolean {
+function propertyStartsWith(
+  properties: Record<string, string>,
+  key: string,
+  prefix: string,
+): boolean {
   return properties[key]?.startsWith(prefix) ?? false;
 }
 

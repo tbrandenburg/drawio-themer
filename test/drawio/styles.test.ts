@@ -33,7 +33,9 @@ describe("parseStyle", () => {
   });
 
   it("separates bare tokens (no '=') from key=value properties", () => {
-    expect(parseStyle("rounded=1;whiteSpace=wrap;html=1;fillColor=#ffffff;strokeColor=#e2e8f0;")).toEqual({
+    expect(
+      parseStyle("rounded=1;whiteSpace=wrap;html=1;fillColor=#ffffff;strokeColor=#e2e8f0;"),
+    ).toEqual({
       tokens: [],
       properties: {
         rounded: "1",
@@ -69,7 +71,8 @@ describe("serializeStyle", () => {
   });
 
   it("round-trips through parseStyle with semantically equivalent result", () => {
-    const original = "rounded=1;whiteSpace=wrap;html=1;fillColor=#ffffff;strokeColor=#e2e8f0;dashed;";
+    const original =
+      "rounded=1;whiteSpace=wrap;html=1;fillColor=#ffffff;strokeColor=#e2e8f0;dashed;";
     const parsed = parseStyle(original);
     const reparsed = parseStyle(serializeStyle(parsed));
     expect(reparsed).toEqual(parsed);
@@ -108,7 +111,9 @@ describe("mergeStyle", () => {
   });
 
   it("PRD section 9: preserves shape=cylinder3 while applying color overrides", () => {
-    const base = parseStyle("shape=cylinder3;fillColor=#dae8fc;strokeColor=#6c8ebf;fontColor=#000000;");
+    const base = parseStyle(
+      "shape=cylinder3;fillColor=#dae8fc;strokeColor=#6c8ebf;fontColor=#000000;",
+    );
     const merged = mergeStyle(base, {
       properties: {
         fillColor: "#fafafa",

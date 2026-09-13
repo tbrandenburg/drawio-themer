@@ -35,9 +35,16 @@ const EXPECTED = join(import.meta.dirname, "fixtures", "golden", "architecture.e
 const THEME_PATH = join(import.meta.dirname, "..", "src", "themes", "shadcn-modern.yaml");
 
 async function runTransform() {
-  const [inputXml, themeSource] = await Promise.all([readFile(FIXTURE, "utf8"), readFile(THEME_PATH, "utf8")]);
+  const [inputXml, themeSource] = await Promise.all([
+    readFile(FIXTURE, "utf8"),
+    readFile(THEME_PATH, "utf8"),
+  ]);
   const theme = compileTheme(loadTheme(themeSource));
-  return transformDrawioXml(inputXml, theme, { format: "preserve", verbose: true, themeMetadata: true });
+  return transformDrawioXml(inputXml, theme, {
+    format: "preserve",
+    verbose: true,
+    themeMetadata: true,
+  });
 }
 
 /** Re-parses a `.drawio` XML string's pages, keyed by diagram `name`. */
@@ -96,7 +103,9 @@ describe("golden integration: architecture.drawio", () => {
     for (const [name, actualPage] of actualPages) {
       const expectedPage = expectedPages.get(name);
       expect(expectedPage, `expected golden file missing page "${name}"`).toBeDefined();
-      expect(actualPage.getModelXml(), `page "${name}" model XML differs`).toBe(expectedPage!.getModelXml());
+      expect(actualPage.getModelXml(), `page "${name}" model XML differs`).toBe(
+        expectedPage!.getModelXml(),
+      );
     }
   });
 
@@ -209,7 +218,9 @@ describe("golden integration: per-item PRD Phase 8 checklist assertions", () => 
 
     const valueMatch = /<mxCell id="htmlLabel1" value="([^"]*)"/.exec(xml);
     expect(valueMatch).not.toBeNull();
-    expect(valueMatch![1]).toBe("&lt;b&gt;Bold Label&lt;/b&gt;&lt;br&gt;&lt;i&gt;italic detail&lt;/i&gt;");
+    expect(valueMatch![1]).toBe(
+      "&lt;b&gt;Bold Label&lt;/b&gt;&lt;br&gt;&lt;i&gt;italic detail&lt;/i&gt;",
+    );
 
     const styleMatch = /<mxCell id="htmlLabel1"[^>]*style="([^"]*)"/.exec(xml);
     expect(styleMatch![1]).toContain("html=1");
@@ -220,7 +231,9 @@ describe("golden integration: per-item PRD Phase 8 checklist assertions", () => 
     const page = pagesByName(outputXml).get("Backend")!;
     const xml = page.getModelXml();
 
-    expect(xml).toContain('<UserObject label="Billing API" role="service" tags="primary critical" id="svc1">');
+    expect(xml).toContain(
+      '<UserObject label="Billing API" role="service" tags="primary critical" id="svc1">',
+    );
     const style = findCellStyle(xml, "svc1")!;
     expect(style).toContain("strokeColor=#4f46e5");
     expect(style).toContain("strokeWidth=2");

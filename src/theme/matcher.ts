@@ -23,7 +23,10 @@ function selectorMatches(selector: CompiledSelector, classification: CellClassif
   if (selector.tag !== undefined && !classification.semanticTags.includes(`tag:${selector.tag}`)) {
     return false;
   }
-  if (selector.role !== undefined && !classification.semanticTags.includes(`role:${selector.role}`)) {
+  if (
+    selector.role !== undefined &&
+    !classification.semanticTags.includes(`role:${selector.role}`)
+  ) {
     return false;
   }
   // `shape` selectors are not supported yet (see module doc); a rule
@@ -38,6 +41,9 @@ function selectorMatches(selector: CompiledSelector, classification: CellClassif
  * Returns the subset of `rules` whose selector matches `classification`,
  * preserving original file order.
  */
-export function matchRules(classification: CellClassification, rules: CompiledRule[]): CompiledRule[] {
+export function matchRules(
+  classification: CellClassification,
+  rules: CompiledRule[],
+): CompiledRule[] {
   return rules.filter((rule) => selectorMatches(rule.selector, classification));
 }

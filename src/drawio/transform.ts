@@ -53,7 +53,11 @@ function isInspectable(cell: XmlElement): boolean {
   return cell.getAttribute("vertex") === "1" || cell.getAttribute("edge") === "1";
 }
 
-function computeThemedStyle(theme: CompiledTheme, original: ParsedStyle, matched: { style: Record<string, string> }[]): ParsedStyle {
+function computeThemedStyle(
+  theme: CompiledTheme,
+  original: ParsedStyle,
+  matched: { style: Record<string, string> }[],
+): ParsedStyle {
   // Theme defaults are a baseline for cells the theme actually targets,
   // not a global stamp on every inspected cell (PRD section 25's stats
   // model expects "Cells skipped" to be a normal, non-zero outcome, e.g.

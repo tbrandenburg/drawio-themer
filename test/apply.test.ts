@@ -41,7 +41,9 @@ describe("applyCommand", () => {
     const input = join(dir, "does-not-exist.drawio");
     const output = join(dir, "output.drawio");
 
-    await expect(applyCommand(input, { ...baseOptions, output })).rejects.toThrow(/Could not read input file/);
+    await expect(applyCommand(input, { ...baseOptions, output })).rejects.toThrow(
+      /Could not read input file/,
+    );
 
     await expect(readFile(output, "utf8")).rejects.toThrow();
 

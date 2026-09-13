@@ -7,7 +7,9 @@ const VALID_FORMATS: OutputFormat[] = ["preserve", "compressed", "uncompressed"]
 
 function parseFormat(value: string): OutputFormat {
   if (!VALID_FORMATS.includes(value as OutputFormat)) {
-    throw new Error(`Invalid --format value "${value}". Expected one of: ${VALID_FORMATS.join(", ")}.`);
+    throw new Error(
+      `Invalid --format value "${value}". Expected one of: ${VALID_FORMATS.join(", ")}.`,
+    );
   }
   return value as OutputFormat;
 }

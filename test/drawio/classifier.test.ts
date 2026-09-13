@@ -27,7 +27,9 @@ describe("classifyCell", () => {
   });
 
   it("classifies a draw.io invisible group cell as group, not node (Golden Rule: Preserve Semantics)", () => {
-    const { cell } = parseCell('<mxCell id="grp1" value="" style="group" vertex="1" connectable="0"/>');
+    const { cell } = parseCell(
+      '<mxCell id="grp1" value="" style="group" vertex="1" connectable="0"/>',
+    );
     expect(classifyCell(cell)).toEqual({ classes: ["group"], semanticTags: [] });
   });
 

@@ -5,7 +5,9 @@ import { compileTheme } from "../../src/theme/compiler.js";
 import { loadTheme } from "../../src/theme/loader.js";
 import type { ThemeInput } from "../../src/theme/schema.js";
 
-const shadcnModernPath = fileURLToPath(new URL("../../src/themes/shadcn-modern.yaml", import.meta.url));
+const shadcnModernPath = fileURLToPath(
+  new URL("../../src/themes/shadcn-modern.yaml", import.meta.url),
+);
 
 function baseTheme(overrides: Partial<ThemeInput> = {}): ThemeInput {
   return {
@@ -23,7 +25,9 @@ describe("compileTheme", () => {
     const compiled = compileTheme(
       baseTheme({
         defaults: { fontFamily: "Inter" },
-        rules: [{ selector: { kind: "node" }, style: { strokeColor: "$border", arcSize: "$radius" } }],
+        rules: [
+          { selector: { kind: "node" }, style: { strokeColor: "$border", arcSize: "$radius" } },
+        ],
       }),
     );
     expect(compiled.defaults).toEqual({ fontFamily: "Inter" });
@@ -32,7 +36,9 @@ describe("compileTheme", () => {
 
   it("passes through literal (non-$) style values unchanged", () => {
     const compiled = compileTheme(
-      baseTheme({ rules: [{ selector: { kind: "node" }, style: { fillColor: "#fafafa", rounded: 1 } }] }),
+      baseTheme({
+        rules: [{ selector: { kind: "node" }, style: { fillColor: "#fafafa", rounded: 1 } }],
+      }),
     );
     expect(compiled.rules[0]?.style).toEqual({ fillColor: "#fafafa", rounded: "1" });
   });
@@ -45,23 +51,31 @@ describe("compileTheme", () => {
   it("throws a fatal error naming a missing token reference", () => {
     expect(() =>
       compileTheme(
-        baseTheme({ rules: [{ selector: { kind: "node" }, style: { strokeColor: "$doesNotExist" } }] }),
+        baseTheme({
+          rules: [{ selector: { kind: "node" }, style: { strokeColor: "$doesNotExist" } }],
+        }),
       ),
     ).toThrow(/doesNotExist/);
   });
 
   it("throws a fatal error naming a forbidden (non-allow-listed) style property", () => {
     expect(() =>
-      compileTheme(baseTheme({ rules: [{ selector: { kind: "node" }, style: { shape: "cylinder3" } }] })),
+      compileTheme(
+        baseTheme({ rules: [{ selector: { kind: "node" }, style: { shape: "cylinder3" } }] }),
+      ),
     ).toThrow(/shape/);
   });
 
   it("throws for other topology/geometry properties too (container, image)", () => {
     expect(() =>
-      compileTheme(baseTheme({ rules: [{ selector: { kind: "node" }, style: { container: "1" } }] })),
+      compileTheme(
+        baseTheme({ rules: [{ selector: { kind: "node" }, style: { container: "1" } }] }),
+      ),
     ).toThrow(/container/);
     expect(() =>
-      compileTheme(baseTheme({ rules: [{ selector: { kind: "image" }, style: { image: "foo.png" } }] })),
+      compileTheme(
+        baseTheme({ rules: [{ selector: { kind: "image" }, style: { image: "foo.png" } }] }),
+      ),
     ).toThrow(/image/);
   });
 

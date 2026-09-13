@@ -1,7 +1,8 @@
 import { describe, expect, it } from "vitest";
 import { compressDiagramContent, decompressDiagramContent } from "../../src/drawio/compression.js";
 
-const SAMPLE_XML = '<mxGraphModel><root><mxCell id="0" /><mxCell id="1" parent="0" /></root></mxGraphModel>';
+const SAMPLE_XML =
+  '<mxGraphModel><root><mxCell id="0" /><mxCell id="1" parent="0" /></root></mxGraphModel>';
 
 describe("compression", () => {
   it("round-trips xml through compress/decompress", () => {
@@ -11,7 +12,8 @@ describe("compression", () => {
   });
 
   it("round-trips xml containing special/unicode characters", () => {
-    const xml = '<mxGraphModel><root><mxCell id="1" value="ünïcödé &amp; 100% done" /></root></mxGraphModel>';
+    const xml =
+      '<mxGraphModel><root><mxCell id="1" value="ünïcödé &amp; 100% done" /></root></mxGraphModel>';
     const compressed = compressDiagramContent(xml);
     expect(decompressDiagramContent(compressed)).toBe(xml);
   });

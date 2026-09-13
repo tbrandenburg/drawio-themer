@@ -6,9 +6,14 @@ import type { CellClassification, CompiledRule } from "../../src/types.js";
 import { readFileSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 
-const shadcnModernPath = fileURLToPath(new URL("../../src/themes/shadcn-modern.yaml", import.meta.url));
+const shadcnModernPath = fileURLToPath(
+  new URL("../../src/themes/shadcn-modern.yaml", import.meta.url),
+);
 
-function classification(classes: CellClassification["classes"], semanticTags: string[] = []): CellClassification {
+function classification(
+  classes: CellClassification["classes"],
+  semanticTags: string[] = [],
+): CellClassification {
   return { classes, semanticTags };
 }
 

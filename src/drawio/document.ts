@@ -69,7 +69,11 @@ export function loadDrawioDocument(xml: string): DrawioDocument {
 function findMxGraphModelElement(diagram: XmlElement): XmlElement | null {
   for (let i = 0; i < diagram.childNodes.length; i++) {
     const node = diagram.childNodes.item(i);
-    if (node && node.nodeType === 1 && (node as unknown as XmlElement).nodeName === "mxGraphModel") {
+    if (
+      node &&
+      node.nodeType === 1 &&
+      (node as unknown as XmlElement).nodeName === "mxGraphModel"
+    ) {
       return node as unknown as XmlElement;
     }
   }

@@ -35,17 +35,23 @@ describe("transformDrawioXml", () => {
     const xml = await readFixture("simple.drawio");
     const theme = await loadCompiledTheme();
 
-    const result = transformDrawioXml(xml, theme, { format: "preserve", verbose: false, themeMetadata: true });
+    const result = transformDrawioXml(xml, theme, {
+      format: "preserve",
+      verbose: false,
+      themeMetadata: true,
+    });
 
     const outputDoc = loadDrawioDocument(result.outputXml);
     const outputPage = getPages(outputDoc)[0];
     expect(outputPage).toBeDefined();
     const outputCells = getMxCells(outputPage!.getModelXml());
 
-    const inputCells = getMxCells(await (async () => {
-      const inputDoc = loadDrawioDocument(xml);
-      return getPages(inputDoc)[0]!.getModelXml();
-    })());
+    const inputCells = getMxCells(
+      await (async () => {
+        const inputDoc = loadDrawioDocument(xml);
+        return getPages(inputDoc)[0]!.getModelXml();
+      })(),
+    );
 
     const node1Before = inputCells.find((c) => c.getAttribute("id") === "node1")!;
     const node1After = outputCells.find((c) => c.getAttribute("id") === "node1")!;
@@ -90,9 +96,15 @@ describe("transformDrawioXml", () => {
     </root></mxGraphModel></diagram></mxfile>`;
     const theme = await loadCompiledTheme();
 
-    const result = transformDrawioXml(xml, theme, { format: "preserve", verbose: false, themeMetadata: false });
+    const result = transformDrawioXml(xml, theme, {
+      format: "preserve",
+      verbose: false,
+      themeMetadata: false,
+    });
     const outputDoc = loadDrawioDocument(result.outputXml);
-    const cell = getMxCells(getPages(outputDoc)[0]!.getModelXml()).find((c) => c.getAttribute("id") === "db1")!;
+    const cell = getMxCells(getPages(outputDoc)[0]!.getModelXml()).find(
+      (c) => c.getAttribute("id") === "db1",
+    )!;
 
     expect(cell.getAttribute("style")).toContain("shape=cylinder3");
     expect(cell.getAttribute("style")).toContain("fillColor=#fafafa");
@@ -103,8 +115,16 @@ describe("transformDrawioXml", () => {
     const xml = await readFixture("simple.drawio");
     const theme = await loadCompiledTheme();
 
-    const first = transformDrawioXml(xml, theme, { format: "preserve", verbose: false, themeMetadata: true });
-    const second = transformDrawioXml(first.outputXml, theme, { format: "preserve", verbose: false, themeMetadata: true });
+    const first = transformDrawioXml(xml, theme, {
+      format: "preserve",
+      verbose: false,
+      themeMetadata: true,
+    });
+    const second = transformDrawioXml(first.outputXml, theme, {
+      format: "preserve",
+      verbose: false,
+      themeMetadata: true,
+    });
 
     const firstModel = getPages(loadDrawioDocument(first.outputXml))[0]!.getModelXml();
     const secondModel = getPages(loadDrawioDocument(second.outputXml))[0]!.getModelXml();
@@ -115,11 +135,19 @@ describe("transformDrawioXml", () => {
     const xml = await readFixture("compressed.drawio");
     const theme = await loadCompiledTheme();
 
-    const preserved = transformDrawioXml(xml, theme, { format: "preserve", verbose: false, themeMetadata: false });
+    const preserved = transformDrawioXml(xml, theme, {
+      format: "preserve",
+      verbose: false,
+      themeMetadata: false,
+    });
     const preservedDoc = loadDrawioDocument(preserved.outputXml);
     expect(getPages(preservedDoc)[0]!.compressed).toBe(true);
 
-    const uncompressed = transformDrawioXml(xml, theme, { format: "uncompressed", verbose: false, themeMetadata: false });
+    const uncompressed = transformDrawioXml(xml, theme, {
+      format: "uncompressed",
+      verbose: false,
+      themeMetadata: false,
+    });
     const uncompressedDoc = loadDrawioDocument(uncompressed.outputXml);
     expect(getPages(uncompressedDoc)[0]!.compressed).toBe(false);
   });
@@ -128,7 +156,11 @@ describe("transformDrawioXml", () => {
     const xml = await readFixture("simple.drawio");
     const theme = await loadCompiledTheme();
 
-    const result = transformDrawioXml(xml, theme, { format: "preserve", verbose: true, themeMetadata: false });
+    const result = transformDrawioXml(xml, theme, {
+      format: "preserve",
+      verbose: true,
+      themeMetadata: false,
+    });
     expect(result.verboseDetails.length).toBe(3);
     const node1Detail = result.verboseDetails.find((d) => d.label === "Start");
     expect(node1Detail?.classes).toContain("node");
@@ -144,7 +176,11 @@ describe("transformDrawioXml", () => {
     </root></mxGraphModel></diagram></mxfile>`;
     const theme = await loadCompiledTheme();
 
-    const result = transformDrawioXml(xml, theme, { format: "preserve", verbose: false, themeMetadata: false });
+    const result = transformDrawioXml(xml, theme, {
+      format: "preserve",
+      verbose: false,
+      themeMetadata: false,
+    });
 
     expect(result.stats.cellsInspected).toBe(1);
     expect(result.stats.cellsSkipped).toBe(1);

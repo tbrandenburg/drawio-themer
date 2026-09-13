@@ -39,12 +39,16 @@ export function decompressDiagramContent(base64: string): string {
   try {
     inflated = pako.inflateRaw(compressed, { toText: true });
   } catch (error) {
-    throw new Error("Page could not be decompressed: invalid raw-deflate stream.", { cause: error });
+    throw new Error("Page could not be decompressed: invalid raw-deflate stream.", {
+      cause: error,
+    });
   }
 
   try {
     return decodeURIComponent(inflated);
   } catch (error) {
-    throw new Error("Page could not be decompressed: invalid URI-encoded content.", { cause: error });
+    throw new Error("Page could not be decompressed: invalid URI-encoded content.", {
+      cause: error,
+    });
   }
 }
