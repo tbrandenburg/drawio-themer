@@ -57,68 +57,73 @@ edges clipped to node perimeters, labels) — good enough for a quick
 visual diff, not a substitute for opening the file in real draw.io (no
 waypoints/groups/rotation/HTML labels).
 
-**Rasterizer choice matters a lot for visual quality — prefer the
-browser pipeline, not `convert`:**
+**Rasterizer choice matters a lot for visual quality. Default to
+`scripts/svg-to-png.mjs` (`@resvg/resvg-js`) — reserve the Playwright
+browser pipeline for cases it can't handle:**
 
-| Rasterizer                                              | Quality  | Notes                                                                                                                                                                                                                                                                                                                       |
-| ------------------------------------------------------- | -------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `convert -background none in.svg out.png` (ImageMagick) | Poor     | No `rsvg-convert` binary in this environment -> silently falls back to ImageMagick's own MSVG delegate: **no `<filter>` support** (blur/glow silently dropped), weak anti-aliasing, no gradients. Looks flat/blocky ("90s" look). Only use `--glow` (manual stacked-stroke fallback, not a real `<filter>`) with this path. |
-| `rsvg-convert`                                          | N/A here | Not installed and no internet to install it (only the `librsvg2-2`/`-common` _libraries_ are present, not the CLI). Don't rely on it existing.                                                                                                                                                                              |
-| Playwright MCP browser (Chromium)                       | Good     | Real anti-aliasing, full `<filter>` (`feGaussianBlur`/`feMerge`) and gradient support. Use `--filter-glow` mode with this path for actual soft neon glow + gradient fills.                                                                                                                                                  |
+| Rasterizer                                                                          | Quality  | Overhead                                                                                                                                       | Notes                                                                                                                                                                                                                                             |
+| ----------------------------------------------------------------------------------- | -------- | ---------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| **`node scripts/svg-to-png.mjs in.svg out.png`** (`@resvg/resvg-js`, devDependency) | **Good** | **Low** — one `npm install`, ~4MB native addon, prebuilt binaries for Linux/macOS/Windows (x64+arm64), single function call, no server/browser | **Default choice.** Full `<filter>` (`feGaussianBlur`/`feMerge`) and gradient support, real anti-aliasing — visually indistinguishable from the Chromium screenshot in side-by-side testing (see git history). Fully scriptable, no manual steps. |
+| `convert -background none in.svg out.png` (ImageMagick)                             | Poor     | Low (already installed)                                                                                                                        | No `rsvg-convert` binary in this environment -> silently falls back to ImageMagick's own MSVG delegate: **no `<filter>` support** (blur/glow silently dropped), weak anti-aliasing, no gradients. Looks flat/blocky ("90s" look). Avoid.          |
+| `rsvg-convert`                                                                      | N/A here | —                                                                                                                                              | Not installed and no internet to install it (only the `librsvg2-2`/`-common` _libraries_ are present, not the CLI). Don't rely on it existing.                                                                                                    |
+| Playwright MCP browser (Chromium)                                                   | Good     | High — ~300MB Chromium download, needs a local HTTP server (`file://` is blocked), manual navigate/screenshot steps per image                  | Fallback only, for whatever `resvg` can't render (e.g. HTML-based `foreignObject` labels). Use `--filter-glow` mode with this path.                                                                                                               |
 
-Preferred workflow (browser pipeline):
-
-1. Apply the theme: `node dist/cli.js apply <in>.drawio -t <theme> -o <out>.drawio`.
-2. **If the fixture uses layer/swimlane boxes that should theme as
-   containers**, verify they have `container=1` in their `style` first
-   (`grep container= <file>.drawio`) — without it the classifier treats
-   them as plain nodes and the theme's `container` rule silently never
-   matches (looks "untouched").
-3. Render SVG: `python3 scripts/render-drawio-preview.py <file>.drawio <file>.svg <bg-hex> --filter-glow`.
-   Font handling: the theme's real `fontFamily` (e.g. `Inter`, a web
-   font bundled by real draw.io) is _not_ installed in this offline
-   sandbox, so `render-drawio-preview.py` appends its own verified
-   fallback stack (`Noto Sans, Helvetica Neue, Arial, sans-serif`) to
-   every `font-family` it emits — do not edit a theme's `fontFamily`
-   token just to fix the local preview's look; fix the renderer's
-   fallback stack instead. Verify installed fonts with `fc-match
-"<name>"` before assuming a family renders (only `Noto Sans`,
-   `Liberation Sans`, `DejaVu Sans` and the `Noto Sans <Script>` CJK/
-   Indic families are available here — no `Inter`, no `Arial`/
-   `Helvetica` as real font files, only fontconfig aliases to
-   Liberation Sans).
-4. Wrap in a minimal HTML file (`<body style="margin:0"><svg>...</svg></body>`)
-   and serve it over local HTTP (`python3 -m http.server <port>` in the
-   SVG's directory) — the Playwright MCP browser blocks `file://` URLs.
-5. `playwright_browser_navigate` to `http://localhost:<port>/<file>.html`,
-   then screenshot **the `svg` element itself** (`target: "svg"`), not
-   the full viewport — viewport screenshots leave black/white margin
-   artifacts when the window size doesn't match the SVG's dimensions.
-6. Kill the HTTP server afterward (find its PID via `ss -ltnp` and kill
-   that PID directly — do not `pkill -f`, see root AGENTS.md).
-7. **Before claiming the render is correct, read the PNG back with an
-   image-capable Read tool and visually inspect it** — do not infer
-   correctness from the SVG source (e.g. grepping for `filter=` proves
-   nothing about whether the chosen rasterizer actually honors it) or
-   from the CLI's `--verbose` "themed" counts (they prove the theme
-   compiled, not that the preview rendered it visibly).
-8. Save PNGs under `.playwright-mcp/` (gitignored) with a **fresh,
-   unique filename per revision** (e.g. `themed-v2.png`, not a reused
-   `themed.png`) — chat clients cache images by path/filename, so
-   overwriting the same name can show a stale image even after the
-   underlying file changed.
-
-Copy-pasteable end-to-end recipe (adjust paths/theme):
+Default workflow (`resvg`, one command chain, no browser/server):
 
 ```bash
 node dist/cli.js apply in.drawio -t theme.yaml -o out.drawio
 python3 scripts/render-drawio-preview.py in.drawio before.svg "#ffffff"
 python3 scripts/render-drawio-preview.py out.drawio after.svg "#09090b" --filter-glow
-for f in before after; do
-  printf '<!doctype html><html><head><style>body{margin:0;background:#000}</style></head><body>%s</body></html>' \
-    "$(cat $f.svg)" > "$f.html"
-done
-python3 -m http.server 8935 &   # then browser_navigate to http://localhost:8935/before.html
-                                # and http://localhost:8935/after.html,
-                                # screenshotting target: "svg" each time
+node scripts/svg-to-png.mjs before.svg before.png
+node scripts/svg-to-png.mjs after.svg after.png
 ```
+
+Notes that still apply regardless of rasterizer:
+
+- **If the fixture uses layer/swimlane boxes that should theme as
+  containers**, verify they have `container=1` in their `style` first
+  (`grep container= <file>.drawio`) — without it the classifier treats
+  them as plain nodes and the theme's `container` rule silently never
+  matches (looks "untouched").
+- Font handling: the theme's real `fontFamily` (e.g. `Inter`, a web
+  font bundled by real draw.io) is _not_ installed in this offline
+  sandbox, so `render-drawio-preview.py` appends its own verified
+  fallback stack (`Noto Sans, Helvetica Neue, Arial, sans-serif`) to
+  every `font-family` it emits — do not edit a theme's `fontFamily`
+  token just to fix the local preview's look; fix the renderer's
+  fallback stack instead. Verify installed fonts with `fc-match
+"<name>"` before assuming a family renders (only `Noto Sans`,
+  `Liberation Sans`, `DejaVu Sans` and the `Noto Sans <Script>` CJK/
+  Indic families are available here — no `Inter`, no `Arial`/
+  `Helvetica` as real font files, only fontconfig aliases to
+  Liberation Sans). `resvg`'s `font.loadSystemFonts` option picks these
+  up automatically via fontconfig, same as the browser pipeline.
+- **Before claiming the render is correct, read the PNG back with an
+  image-capable Read tool and visually inspect it** — do not infer
+  correctness from the SVG source (e.g. grepping for `filter=` proves
+  nothing about whether the chosen rasterizer actually honors it) or
+  from the CLI's `--verbose` "themed" counts (they prove the theme
+  compiled, not that the preview rendered it visibly).
+- Save PNGs under `.playwright-mcp/` (gitignored, for chat-only scratch
+  work) or `docs/assets/` (committed, for README/docs) with a **fresh,
+  unique filename per revision** (e.g. `themed-v2.png`, not a reused
+  `themed.png`) — chat clients cache images by path/filename, so
+  overwriting the same name can show a stale image even after the
+  underlying file changed.
+
+### Fallback: Playwright browser pipeline
+
+Only needed for SVG features `resvg` doesn't support. Adds a real
+browser engine at the cost of much higher overhead (Chromium install, a
+local HTTP server, manual per-image navigate/screenshot calls):
+
+1. Render SVG as above.
+2. Wrap in a minimal HTML file (`<body style="margin:0"><svg>...</svg></body>`)
+   and serve it over local HTTP (`python3 -m http.server <port>` in the
+   SVG's directory) — the Playwright MCP browser blocks `file://` URLs.
+3. `playwright_browser_navigate` to `http://localhost:<port>/<file>.html`,
+   then screenshot **the `svg` element itself** (`target: "svg"`), not
+   the full viewport — viewport screenshots leave black/white margin
+   artifacts when the window size doesn't match the SVG's dimensions.
+4. Kill the HTTP server afterward (find its PID via `ss -ltnp` and kill
+   that PID directly — do not `pkill -f`, see root AGENTS.md).

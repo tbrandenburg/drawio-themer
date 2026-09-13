@@ -20,4 +20,17 @@ export default tseslint.config(
     files: ["*.js"],
     ...tseslint.configs.disableTypeChecked,
   },
+  {
+    // Node-executed helper scripts (not part of the published package),
+    // e.g. scripts/svg-to-png.mjs - need Node globals, no type-checked
+    // project since they're outside tsconfig.json's include.
+    files: ["scripts/**/*.mjs"],
+    ...tseslint.configs.disableTypeChecked,
+    languageOptions: {
+      globals: {
+        process: "readonly",
+        console: "readonly",
+      },
+    },
+  },
 );
