@@ -2,6 +2,11 @@
   "name": "drawio-themer",
   "version": "0.1.0",
   "description": "Apply modern visual themes to existing draw.io / diagrams.net files.",
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/tbrandenburg/drawio-themer.git"
+  },
   "type": "module",
   "engines": {
     "node": ">=24"

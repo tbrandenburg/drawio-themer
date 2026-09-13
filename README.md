@@ -1,20 +1,74 @@
 # drawio-themer
 
-Apply modern visual themes to existing draw.io / diagrams.net files.
+Apply modern, semantic visual themes to existing draw.io / diagrams.net
+`.drawio` files — from the command line, without touching geometry,
+topology, or shape semantics.
 
-> Status: milestone-1 PoC. `apply` parses `.drawio` files (inline and
-> compressed pages, multi-page), classifies cells, and applies a YAML
-> theme's rules while preserving geometry, topology, and shape semantics.
+[![Format](https://github.com/tbrandenburg/drawio-themer/actions/workflows/checks.yml/badge.svg?branch=main&event=push&job=format)](https://github.com/tbrandenburg/drawio-themer/actions/workflows/checks.yml)
+[![Lint](https://github.com/tbrandenburg/drawio-themer/actions/workflows/checks.yml/badge.svg?branch=main&event=push&job=lint)](https://github.com/tbrandenburg/drawio-themer/actions/workflows/checks.yml)
+[![Tests](https://github.com/tbrandenburg/drawio-themer/actions/workflows/checks.yml/badge.svg?branch=main&event=push&job=test)](https://github.com/tbrandenburg/drawio-themer/actions/workflows/checks.yml)
+[![Node](https://img.shields.io/badge/node-%3E%3D24-339933?logo=node.js&logoColor=white)](package.json)
+[![License: MIT](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
 
-## Usage
+<table>
+<tr>
+<th align="center">Before</th>
+<th align="center">After — <code>dark-neon-mode</code> theme</th>
+</tr>
+<tr>
+<td><img src="docs/assets/demo-before.png" alt="Layered architecture diagram before theming" width="420"></td>
+<td><img src="docs/assets/demo-after.png" alt="Layered architecture diagram after applying a dark neon theme" width="420"></td>
+</tr>
+</table>
+
+## Table of contents
+
+- [Why](#why)
+- [Features](#features)
+- [Install](#install)
+- [Usage](#usage)
+- [Themes](#themes)
+- [Development](#development)
+- [License](#license)
+
+## Why
+
+Manually restyling every shape in a `.drawio` file — fills, strokes,
+fonts, corner radius, edge arrows — is tedious and error-prone, and
+generic "convert to X" tools tend to mangle geometry, connections, or
+shape semantics (a database cylinder becoming a plain rectangle, for
+example). `drawio-themer` rewrites only presentational style
+properties via a small YAML theme, leaving everything else — layout,
+connections, embedded images/icons, shape types — untouched.
+
+## Features
+
+- **Safe by construction** — a style-property allow-list (see
+  [`docs/PRD.md`](docs/PRD.md#10-style-allow-list)) guarantees geometry,
+  topology, and shape type are never rewritten.
+- **Semantic classification** — nodes, edges, containers, and database
+  shapes are classified automatically and themed with distinct rules.
+- **Multi-page & compressed diagrams** — supports both inline and
+  `raw-deflate` + base64 compressed page content.
+- **Idempotent** — re-applying a theme to an already-themed file is a
+  no-op.
+- **Bundled themes** — ships with `shadcn-modern`, a light,
+  shadcn/ui-inspired default; write your own in a few lines of YAML.
+
+## Install
 
 ```sh
 npm install
 npm run build
+```
+
+## Usage
+
+```sh
 node dist/cli.js apply input.drawio -t shadcn-modern -o output.drawio
 ```
 
-Or during development:
+Or during development, without a build step:
 
 ```sh
 npx tsx src/cli.ts apply input.drawio -t shadcn-modern -o output.drawio
@@ -34,6 +88,16 @@ Options:
   -h, --help
 ```
 
+## Themes
+
+A theme is a YAML file of design tokens plus a small set of rules
+matched against classified cells (`node`, `edge`, `container`,
+`database`) or explicit tags. See
+[`src/themes/shadcn-modern.yaml`](src/themes/shadcn-modern.yaml) for a
+complete, documented example, and
+[`docs/PRD.md`](docs/PRD.md) for the full theme format and style
+allow-list.
+
 ## Development
 
 Common tasks are wrapped in a `Makefile` with a dependency chain
@@ -41,14 +105,14 @@ Common tasks are wrapped in a `Makefile` with a dependency chain
 each target re-verifies the gates before it:
 
 ```sh
-make format         # prettier --write (mutates files)
+make format          # prettier --write (mutates files)
 make format-check    # prettier --check (CI-safe, no mutation)
 make lint            # format-check + eslint
 make test            # lint + build + vitest
 make run             # test + `node dist/cli.js --version`
-make release-patch    # run + npm version patch + git push --follow-tags
-make release-minor    # run + npm version minor + git push --follow-tags
-make release-major    # run + npm version major + git push --follow-tags
+make release-patch   # run + npm version patch + git push --follow-tags
+make release-minor   # run + npm version minor + git push --follow-tags
+make release-major   # run + npm version major + git push --follow-tags
 ```
 
 Plain npm scripts are also available (`npm run build|lint|test|format|format:check`).
@@ -56,3 +120,7 @@ Plain npm scripts are also available (`npm run build|lint|test|format|format:che
 CI runs `make format-check`, `make lint`, and `make test` as separate
 required checks (`Checks / Format`, `Checks / Lint`, `Checks / Tests`)
 on every pull request.
+
+## License
+
+[MIT](LICENSE)
