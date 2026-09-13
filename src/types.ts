@@ -89,3 +89,39 @@ export interface CompiledTheme {
   defaults: Record<string, string>;
   rules: CompiledRule[];
 }
+
+/**
+ * Per-run transformation statistics (PRD section 25, "Statistics").
+ *
+ * `themedByClass` counts one cell per `CellClass` it was *primarily*
+ * classified as (`classification.classes[0]`) when at least one matched
+ * theme rule changed at least one style property on it. `cellsSkipped`
+ * counts inspected cells (any `<mxCell>` with `vertex="1"` or
+ * `edge="1"`) that were not themed (no matching rule, or a matching
+ * rule that produced no actual change).
+ */
+export interface TransformStats {
+  themeName: string;
+  pages: number;
+  cellsInspected: number;
+  themedByClass: Partial<Record<CellClass, number>>;
+  cellsSkipped: number;
+}
+
+/**
+ * Per-cell detail emitted only when `--verbose` is set (PRD section 25).
+ * Only produced for cells that were actually themed (had a style change).
+ */
+export interface VerboseCellDetail {
+  label: string;
+  classes: CellClass[];
+  semanticTags: string[];
+  changedProperties: string[];
+}
+
+/** Result of running the full transformation pipeline (see `transform.ts`). */
+export interface TransformResult {
+  outputXml: string;
+  stats: TransformStats;
+  verboseDetails: VerboseCellDetail[];
+}

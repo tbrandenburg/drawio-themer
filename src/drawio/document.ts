@@ -26,10 +26,14 @@ export interface DrawioPage {
   /** Returns this page's mxGraphModel content as an XML string. */
   getModelXml(): string;
   /**
-   * Replaces this page's mxGraphModel content, preserving the page's
-   * original compressed/inline storage format.
+   * Replaces this page's mxGraphModel content.
+   *
+   * By default preserves the page's original compressed/inline storage
+   * format. Pass `forceCompressed` to override that (used by Phase 6's
+   * `--format compressed|uncompressed` transformer option, PRD section
+   * 18) - `true` always stores compressed, `false` always stores inline.
    */
-  setModelXml(xml: string): void;
+  setModelXml(xml: string, forceCompressed?: boolean): void;
 }
 
 function parseXml(xml: string): XmlDocument {
@@ -110,11 +114,11 @@ function makePage(xmlDoc: XmlDocument, diagram: XmlElement): DrawioPage {
       }
       return new XMLSerializer().serializeToString(model);
     },
-    setModelXml(xml: string): void {
+    setModelXml(xml: string, forceCompressed: boolean = compressed): void {
       while (diagram.firstChild) {
         diagram.removeChild(diagram.firstChild);
       }
-      if (compressed) {
+      if (forceCompressed) {
         diagram.appendChild(xmlDoc.createTextNode(compressDiagramContent(xml)));
         return;
       }

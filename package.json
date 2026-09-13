@@ -14,7 +14,7 @@
     "dist"
   ],
   "scripts": {
-    "build": "tsc",
+    "build": "tsc && node -e \"require('fs').cpSync('src/themes','dist/themes',{recursive:true})\"",
     "dev": "tsx src/cli.ts",
     "lint": "eslint .",
     "format": "prettier --write .",
