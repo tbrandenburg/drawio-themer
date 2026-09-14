@@ -59,13 +59,28 @@ connections, embedded images/icons, shape types — untouched.
 
 ## Install
 
+Run the published CLI without installing it:
+
+```sh
+npx --yes drawio-themer@latest --help
+```
+
+For a persistent global installation:
+
+```sh
+npm install --global drawio-themer
+```
+
+After global installation, the `drawio-themer` command is available directly.
+
+For local development from a checkout:
+
 ```sh
 npm install
 npm run build
 ```
 
-To use the `drawio-themer` command directly (instead of `node dist/cli.js`),
-install it globally after building:
+To use the locally built command directly, install this checkout globally:
 
 ```sh
 make install-global
@@ -77,7 +92,13 @@ make install-global
 drawio-themer apply input.drawio -t shadcn-modern -o output.drawio
 ```
 
-Or without a global install, run the built CLI directly:
+Or run the published CLI with `npx`, without a global install:
+
+```sh
+npx --yes drawio-themer@latest apply input.drawio -t shadcn-modern -o output.drawio
+```
+
+Or without an npm install, run the built CLI directly from a checkout:
 
 ```sh
 node dist/cli.js apply input.drawio -t shadcn-modern -o output.drawio

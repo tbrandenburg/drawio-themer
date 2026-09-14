@@ -1,8 +1,10 @@
 #!/usr/bin/env node
+import { createRequire } from "node:module";
 import { Command } from "commander";
 import { applyCommand } from "./commands/apply.js";
 import type { ApplyOptions, OutputFormat } from "./types.js";
 
+const packageJson = createRequire(import.meta.url)("../package.json") as { version: string };
 const VALID_FORMATS: OutputFormat[] = ["preserve", "compressed", "uncompressed"];
 
 function parseFormat(value: string): OutputFormat {
@@ -19,7 +21,7 @@ const program = new Command();
 program
   .name("drawio-themer")
   .description("Apply modern visual themes to existing draw.io / diagrams.net files.")
-  .version("0.1.0");
+  .version(packageJson.version);
 
 program
   .command("apply")
