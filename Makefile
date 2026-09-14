@@ -1,4 +1,4 @@
-.PHONY: install format format-check lint build test run install-global release release-patch release-minor release-major clean
+.PHONY: install format format-check lint build test ci run install-global publish release release-patch release-minor release-major clean
 
 # node_modules is a real prerequisite (make treats it as a file/dir
 # target), so `install` only re-runs `npm install` when package.json or
@@ -27,6 +27,9 @@ build: install
 test: lint build
 	npm run test
 
+# CI gate used by local and GitHub Actions release checks.
+ci: test
+
 run: test
 	node dist/cli.js --version
 
@@ -36,6 +39,11 @@ run: test
 # bump or re-running the full gate just to install locally.
 install-global: build
 	npm install -g .
+
+# Manual/local npm publish. Automated releases use the GitHub Actions
+# publish workflow with npm trusted publishing.
+publish:
+	npm publish
 
 # release-{patch,minor,major}: full format/lint/test/build/run gate
 # must pass before `npm version` bumps package.json, commits, and tags,
