@@ -1,4 +1,4 @@
-import { readFile, writeFile } from "node:fs/promises";
+import { mkdir, readFile, writeFile } from "node:fs/promises";
 import { fileURLToPath } from "node:url";
 import { dirname, join } from "node:path";
 import type { ApplyOptions, CellClass, TransformStats, VerboseCellDetail } from "../types.js";
@@ -75,6 +75,26 @@ function printVerboseDetails(details: VerboseCellDetail[]): void {
 }
 
 /**
+ * Writes rendered bytes to `outputPath`, creating any missing parent
+ * directories first and re-throwing failures as a clear, wrapped error
+ * (matching the input/theme/output error messages below) instead of
+ * letting a raw Node `ENOENT` etc. escape uncaught.
+ */
+async function writeRenderOutput(
+  kind: "PNG" | "SVG",
+  outputPath: string,
+  data: string | Buffer,
+): Promise<void> {
+  try {
+    await mkdir(dirname(outputPath), { recursive: true });
+    await writeFile(outputPath, data);
+  } catch (error) {
+    const reason = error instanceof Error ? error.message : String(error);
+    throw new Error(`Could not write ${kind} file "${outputPath}": ${reason}`, { cause: error });
+  }
+}
+
+/**
  * Renders a `.drawio` document's first page to a PNG file (PRD issue #5).
  * Shared by both `--png-original` and `--png-themed` so there is exactly
  * one code path from drawio XML to PNG bytes.
@@ -86,7 +106,7 @@ async function renderDrawioToPng(
 ): Promise<void> {
   const svg = renderDrawioToSvg(drawioXml, options);
   const png = rasterizeSvgToPng(svg);
-  await writeFile(outputPath, png);
+  await writeRenderOutput("PNG", outputPath, png);
 }
 
 /**
@@ -100,7 +120,7 @@ async function renderDrawioToSvgFile(
   options?: RenderOptions,
 ): Promise<void> {
   const svg = renderDrawioToSvg(drawioXml, options);
-  await writeFile(outputPath, svg);
+  await writeRenderOutput("SVG", outputPath, svg);
 }
 
 /**
