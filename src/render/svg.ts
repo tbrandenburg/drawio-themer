@@ -9,10 +9,11 @@
  * (inline or compressed) that the rest of the pipeline sees, rather than
  * a second, independent XML parse.
  *
- * NOT a replacement for draw.io's real renderer: no waypoints, no HTML
- * labels, no groups/rotation. It reads mxCell fill/stroke/font colors and
- * basic shapes (rect/cylinder) and draws an approximate SVG, good enough
- * for a quick visual diff.
+ * NOT a replacement for draw.io's real renderer: no HTML labels, no true
+ * font-metric-based text layout (wrapping/rotation/arrows are best-effort
+ * approximations). It reads mxCell fill/stroke/font colors and basic
+ * shapes (rect/ellipse/rhombus/hexagon/cylinder) and draws an
+ * approximate SVG, good enough for a quick visual diff.
  */
 import { DOMParser } from "@xmldom/xmldom";
 import type { Element as XmlElement } from "@xmldom/xmldom";
@@ -113,12 +114,47 @@ function clipToRect(
   return [cx + dx * scale, cy + dy * scale];
 }
 
+/** Builds a `<polygon points="...">` string from a flat array of [x,y] pairs. */
+function polygonPoints(points: Array<[number, number]>): string {
+  return points.map(([px, py]) => `${px.toFixed(1)},${py.toFixed(1)}`).join(" ");
+}
+
 function escapeXml(text: string): string {
   return text
     .replace(/&/g, "&amp;")
     .replace(/</g, "&lt;")
     .replace(/>/g, "&gt;")
     .replace(/"/g, "&quot;");
+}
+
+/**
+ * Approximates draw.io's `whiteSpace=wrap` behavior: greedily wraps each
+ * existing line of `label` onto multiple lines so it fits within `width`,
+ * using a rough average character width (no real font metrics available
+ * offline). Words longer than a whole line are kept intact rather than
+ * split mid-word.
+ */
+function wrapLabel(label: string, width: number, fontSize: string): string[] {
+  const size = Number.parseFloat(fontSize) || 12;
+  const avgCharWidth = size * 0.6;
+  const maxChars = Math.max(1, Math.floor(width / avgCharWidth));
+
+  const wrapped: string[] = [];
+  for (const paragraph of label.split("\n")) {
+    const words = paragraph.split(" ");
+    let current = "";
+    for (const word of words) {
+      const candidate = current ? `${current} ${word}` : word;
+      if (candidate.length > maxChars && current) {
+        wrapped.push(current);
+        current = word;
+      } else {
+        current = candidate;
+      }
+    }
+    wrapped.push(current);
+  }
+  return wrapped;
 }
 
 /**
@@ -143,12 +179,18 @@ function normalizeDataUri(uri: string): string {
  * reusing the document model (handles both inline and compressed page
  * content transparently).
  */
-export function renderDrawioToSvg(drawioXml: string, options: RenderOptions = {}): string {
-  const { background = "#ffffff", glow = "none" } = options;
-
-  const doc = loadDrawioDocument(drawioXml);
-  const pages = getPages(doc);
-  const modelXml = pages[0]?.getModelXml() ?? "<mxGraphModel><root/></mxGraphModel>";
+/**
+ * Renders a single page's `<mxGraphModel>` XML into SVG node/edge markup,
+ * plus the page's natural (unscaled) width/height. All coordinates are
+ * relative to this page's own origin; the caller (`renderDrawioToSvg`)
+ * is responsible for translating/stacking multiple pages.
+ */
+function renderPage(
+  modelXml: string,
+  glow: GlowMode,
+  defs: string[],
+  gradientIds: Map<string, string>,
+): { nodeSvg: string[]; edgeSvg: string[]; width: number; height: number } {
   const modelDoc = new DOMParser().parseFromString(modelXml, "text/xml");
   const root = modelDoc.documentElement as unknown as XmlElement;
   const cells = childElements(root, "mxCell");
@@ -158,19 +200,38 @@ export function renderDrawioToSvg(drawioXml: string, options: RenderOptions = {}
     if (id) cellById.set(id, cell);
   }
 
-  const defs: string[] = [
-    '<marker id="arrow" markerWidth="10" markerHeight="10" refX="8" ' +
-      'refY="3" orient="auto"><path d="M0,0 L0,6 L9,3 z" fill="#888"/></marker>',
-  ];
-  if (glow === "filter") {
-    defs.push(
-      '<filter id="softGlow" x="-60%" y="-60%" width="220%" height="220%">' +
-        '<feGaussianBlur in="SourceGraphic" stdDeviation="4" result="blur"/>' +
-        '<feMerge><feMergeNode in="blur"/><feMergeNode in="blur"/><feMergeNode in="SourceGraphic"/></feMerge>' +
-        "</filter>",
-    );
+  /**
+   * A cell with `visible="0"` must not be drawn at all, and a descendant
+   * of a `collapsed="1"` container/group must not be drawn either (real
+   * draw.io hides a collapsed container's children until it is expanded).
+   * The container/group cell itself still renders when collapsed - only
+   * its descendants are suppressed.
+   */
+  const hiddenCache = new Map<string, boolean>();
+  function isHidden(cellId: string, seen = new Set<string>()): boolean {
+    const cached = hiddenCache.get(cellId);
+    if (cached !== undefined) return cached;
+    const cell = cellById.get(cellId);
+    if (!cell || seen.has(cellId)) return false;
+    seen.add(cellId);
+    if (cell.getAttribute("visible") === "0") {
+      hiddenCache.set(cellId, true);
+      return true;
+    }
+    const parentId = cell.getAttribute("parent");
+    if (!parentId) {
+      hiddenCache.set(cellId, false);
+      return false;
+    }
+    const parentCell = cellById.get(parentId);
+    const parentCollapsed =
+      !!parentCell &&
+      parseStyle(parentCell.getAttribute("style") ?? "").properties.collapsed === "1";
+    const hidden = parentCollapsed || isHidden(parentId, seen);
+    hiddenCache.set(cellId, hidden);
+    return hidden;
   }
-  const gradientIds = new Map<string, string>();
+
   function gradientFor(fill: string): string {
     const existing = gradientIds.get(fill);
     if (existing) return existing;
@@ -236,9 +297,78 @@ export function renderDrawioToSvg(drawioXml: string, options: RenderOptions = {}
     return geo ? [geo.x + geo.w / 2, geo.y + geo.h / 2] : null;
   }
 
+  /**
+   * Resolves a node's connection point for an edge endpoint: if the edge
+   * style specifies a fixed fractional connection point (`exitX/exitY` on
+   * the source, `entryX/entryY` on the target), that fraction of the
+   * node's border is used verbatim (matching real draw.io's fixed
+   * connection points); otherwise falls back to `clipToRect`, projecting
+   * from the node's center toward the other endpoint.
+   */
+  function connectionPoint(
+    geo: NodeGeometry,
+    fracX: string | undefined,
+    fracY: string | undefined,
+    otherX: number,
+    otherY: number,
+  ): [number, number] {
+    if (fracX !== undefined && fracY !== undefined) {
+      const fx = Number.parseFloat(fracX);
+      const fy = Number.parseFloat(fracY);
+      if (!Number.isNaN(fx) && !Number.isNaN(fy)) {
+        return [geo.x + geo.w * fx, geo.y + geo.h * fy];
+      }
+    }
+    const cx = geo.x + geo.w / 2;
+    const cy = geo.y + geo.h / 2;
+    return clipToRect(cx, cy, otherX, otherY, geo.w, geo.h);
+  }
+
+  /** Builds a `stroke-dasharray` attribute fragment for a dashed/dotted style, or "" when solid. */
+  function dashArrayAttr(style: ReturnType<typeof parseStyle>): string {
+    if (style.properties.dashed !== "1") return "";
+    const pattern = style.properties.dashPattern;
+    const dashArray = pattern ? pattern.trim().split(/\s+/).join(",") : "4,4";
+    return ` stroke-dasharray="${dashArray}"`;
+  }
+
+  /**
+   * draw.io's `opacity`/`fillOpacity`/`strokeOpacity` style properties are
+   * 0-100 integers; `opacity` is an overall multiplier applied to both
+   * fill and stroke unless the more specific property is also set.
+   */
+  function opacities(style: ReturnType<typeof parseStyle>): { fill: number; stroke: number } {
+    const overall = style.properties.opacity;
+    const fillPct = style.properties.fillOpacity ?? overall ?? "100";
+    const strokePct = style.properties.strokeOpacity ?? overall ?? "100";
+    const toRatio = (pct: string) => {
+      const parsed = Number.parseFloat(pct);
+      return Number.isNaN(parsed) ? 1 : parsed / 100;
+    };
+    return { fill: toRatio(fillPct), stroke: toRatio(strokePct) };
+  }
+
+  /**
+   * Maps a draw.io `startArrow`/`endArrow` style value to the matching
+   * marker id defined in `renderDrawioToSvg`'s `<defs>`, or `undefined`
+   * when the edge explicitly has no arrowhead at that end (`none`).
+   * `endArrow` defaults to a classic arrowhead when unset (matching real
+   * draw.io); `startArrow` defaults to no arrowhead when unset.
+   */
+  function arrowMarkerId(kind: string | undefined, end: "start" | "end"): string | undefined {
+    const resolved = kind ?? (end === "end" ? "classic" : "none");
+    if (resolved === "none") return undefined;
+    const suffix = end === "start" ? "Start" : "";
+    if (resolved.startsWith("diamond")) return `diamond${suffix}`;
+    if (resolved === "oval") return `oval${suffix}`;
+    return `arrow${suffix}`;
+  }
+
   const edgeSvg: string[] = [];
   for (const cell of cells) {
     if (cell.getAttribute("edge") !== "1") continue;
+    const edgeId = cell.getAttribute("id");
+    if (edgeId && isHidden(edgeId)) continue;
     const style = parseStyle(cell.getAttribute("style") ?? "");
     const src = cell.getAttribute("source");
     const tgt = cell.getAttribute("target");
@@ -248,18 +378,63 @@ export function renderDrawioToSvg(drawioXml: string, options: RenderOptions = {}
     const sourceGeo = nodeGeo.get(src);
     const targetGeo = nodeGeo.get(tgt);
     if (!sourceGeo || !targetGeo) continue;
-    const [p1x, p1y] = clipToRect(c1[0], c1[1], c2[0], c2[1], sourceGeo.w, sourceGeo.h);
-    const [p2x, p2y] = clipToRect(c2[0], c2[1], c1[0], c1[1], targetGeo.w, targetGeo.h);
+
+    // Explicit waypoints (<mxGeometry relative="1"><Array as="points">)
+    // take priority over the node centers when computing the "toward"
+    // direction for the fixed/clipped connection points, so the line
+    // leaves/enters the node border pointing at the first/last waypoint
+    // rather than at the other node's unrelated center.
+    const edgeGeoNodes = childElements(cell, "mxGeometry");
+    const edgeGeo = edgeGeoNodes[0];
+    const waypoints: Array<[number, number]> = [];
+    if (edgeGeo) {
+      const arrays = childElements(edgeGeo, "Array");
+      const pointsArray = arrays.find((a) => a.getAttribute("as") === "points") ?? arrays[0];
+      if (pointsArray) {
+        for (const pt of childElements(pointsArray, "mxPoint")) {
+          waypoints.push([numAttr(pt, "x"), numAttr(pt, "y")]);
+        }
+      }
+    }
+
+    const towardFromSource = waypoints[0] ?? c2;
+    const towardFromTarget = waypoints[waypoints.length - 1] ?? c1;
+
+    const [p1x, p1y] = connectionPoint(
+      sourceGeo,
+      style.properties.exitX,
+      style.properties.exitY,
+      towardFromSource[0],
+      towardFromSource[1],
+    );
+    const [p2x, p2y] = connectionPoint(
+      targetGeo,
+      style.properties.entryX,
+      style.properties.entryY,
+      towardFromTarget[0],
+      towardFromTarget[1],
+    );
     const stroke = style.properties.strokeColor ?? "#000000";
     const strokeWidth = Number.parseFloat(style.properties.strokeWidth ?? "1");
-    const line =
-      `<line x1="${p1x.toFixed(1)}" y1="${p1y.toFixed(1)}" x2="${p2x.toFixed(1)}" ` +
-      `y2="${p2y.toFixed(1)}" stroke="${stroke}" stroke-width="${strokeWidth}" ` +
-      `stroke-opacity="1" marker-end="url(#arrow)"/>`;
+    const dashArray = dashArrayAttr(style);
+    const { stroke: strokeOpacity } = opacities(style);
+    const startMarker = arrowMarkerId(style.properties.startArrow, "start");
+    const endMarker = arrowMarkerId(style.properties.endArrow, "end");
+    const markerAttrs =
+      `${startMarker ? ` marker-start="url(#${startMarker})"` : ""}` +
+      `${endMarker ? ` marker-end="url(#${endMarker})"` : ""}`;
+    const allPoints: Array<[number, number]> = [[p1x, p1y], ...waypoints, [p2x, p2y]];
+    const shape =
+      waypoints.length > 0
+        ? `<polyline points="${polygonPoints(allPoints)}" fill="none" stroke="${stroke}" ` +
+          `stroke-width="${strokeWidth}" stroke-opacity="${strokeOpacity}"${dashArray}${markerAttrs}/>`
+        : `<line x1="${p1x.toFixed(1)}" y1="${p1y.toFixed(1)}" x2="${p2x.toFixed(1)}" ` +
+          `y2="${p2y.toFixed(1)}" stroke="${stroke}" stroke-width="${strokeWidth}" ` +
+          `stroke-opacity="${strokeOpacity}"${dashArray}${markerAttrs}/>`;
     if (glow === "filter") {
-      edgeSvg.push(`<g filter="url(#softGlow)">${line}</g>`);
+      edgeSvg.push(`<g filter="url(#softGlow)">${shape}</g>`);
     } else {
-      edgeSvg.push(line);
+      edgeSvg.push(shape);
     }
   }
 
@@ -272,10 +447,17 @@ export function renderDrawioToSvg(drawioXml: string, options: RenderOptions = {}
 
   const nodeSvg: string[] = [];
   for (const cell of sortedVertices) {
-    const geo = nodeGeo.get(cell.getAttribute("id") ?? "");
+    const id = cell.getAttribute("id") ?? "";
+    if (isHidden(id)) continue;
+    const geo = nodeGeo.get(id);
     if (!geo) continue;
     const { x, y, w, h } = geo;
     const style = parseStyle(cell.getAttribute("style") ?? "");
+    // A plain `group;` wrapper cell (no container=1) is a layout-only
+    // helper in real draw.io - invisible, existing purely so its children
+    // can be moved/resized together. Drawing it as a generic rect gives it
+    // a spurious visible fill+stroke box that never appears in the real UI.
+    if (style.tokens.includes("group") && style.properties.container !== "1") continue;
     const fill = style.properties.fillColor ?? "#ffffff";
     const stroke = style.properties.strokeColor ?? "#000000";
     const fontColor = style.properties.fontColor ?? "#000000";
@@ -283,6 +465,9 @@ export function renderDrawioToSvg(drawioXml: string, options: RenderOptions = {}
     const arc = Number.parseFloat(style.properties.arcSize ?? "0");
     const rx = Number.isNaN(arc) ? 0 : arc <= 100 ? (arc * Math.min(w, h)) / 100 : arc;
     const shape = style.properties.shape ?? "";
+    const isEllipse = shape === "ellipse" || style.tokens.includes("ellipse");
+    const isRhombus = shape === "rhombus" || style.tokens.includes("rhombus");
+    const isHexagon = shape === "hexagon";
     const label = cell.getAttribute("value") ?? "";
     const fontFamily = `${style.properties.fontFamily ?? ""}, ${FONT_FALLBACK_STACK}`.replace(
       /^,\s*/,
@@ -299,41 +484,90 @@ export function renderDrawioToSvg(drawioXml: string, options: RenderOptions = {}
     const bold = style.properties.fontStyle === "1" ? 'font-weight="bold"' : "";
     let textY = valign === "top" ? y + 18 : y + h / 2 + 5;
     const fillRef = glow === "filter" ? `url(#${gradientFor(fill)})` : fill;
+    const dashArray = dashArrayAttr(style);
+    const { fill: fillOpacity, stroke: strokeOpacity } = opacities(style);
+    // Collect this cell's shape + label markup separately so an optional
+    // `rotation=NN` can wrap the whole node in a single `<g transform=
+    // "rotate(...)">` at the end, instead of rotating each piece apart.
+    const cellSvg: string[] = [];
 
     if (shape.includes("cylinder")) {
       const eh = h * 0.18;
       const cyl =
-        `<g stroke="${stroke}" stroke-width="${strokeWidth}" stroke-opacity="1" fill="${fillRef}">` +
+        `<g stroke="${stroke}" stroke-width="${strokeWidth}" stroke-opacity="${strokeOpacity}" ` +
+        `fill="${fillRef}" fill-opacity="${fillOpacity}"${dashArray}>` +
         `<path d="M ${x},${y + eh} L ${x},${y + h - eh} A ${w / 2},${eh} 0 0 0 ${x + w},${y + h - eh} ` +
         `L ${x + w},${y + eh} A ${w / 2},${eh} 0 0 0 ${x},${y + eh} Z"/>` +
         `<ellipse cx="${x + w / 2}" cy="${y + eh}" rx="${w / 2}" ry="${eh}"/>` +
         "</g>";
-      nodeSvg.push(glow === "filter" ? `<g filter="url(#softGlow)">${cyl}</g>${cyl}` : cyl);
+      cellSvg.push(glow === "filter" ? `<g filter="url(#softGlow)">${cyl}</g>${cyl}` : cyl);
       textY = y + h / 2 + eh / 2;
     } else if (shape === "image" && style.properties.image) {
       // shape=image cells (e.g. embedded PNG icons via a data: URI) have
       // no fill/stroke box in real draw.io - draw the image itself
       // instead of falling through to the generic filled rect below,
       // which used to render icons as a blank placeholder rectangle.
-      nodeSvg.push(
+      cellSvg.push(
         `<image x="${x}" y="${y}" width="${w}" height="${h}" ` +
           `href="${escapeXml(normalizeDataUri(style.properties.image))}" preserveAspectRatio="xMidYMid meet"/>`,
+      );
+    } else if (isEllipse) {
+      const ellipse =
+        `<ellipse cx="${x + w / 2}" cy="${y + h / 2}" rx="${w / 2}" ry="${h / 2}" ` +
+        `fill="${fillRef}" fill-opacity="${fillOpacity}" stroke="${stroke}" ` +
+        `stroke-width="${strokeWidth}" stroke-opacity="${strokeOpacity}"${dashArray}/>`;
+      cellSvg.push(
+        glow === "filter" ? `<g filter="url(#softGlow)">${ellipse}</g>${ellipse}` : ellipse,
+      );
+    } else if (isRhombus) {
+      const points: Array<[number, number]> = [
+        [x + w / 2, y],
+        [x + w, y + h / 2],
+        [x + w / 2, y + h],
+        [x, y + h / 2],
+      ];
+      const rhombus =
+        `<polygon points="${polygonPoints(points)}" fill="${fillRef}" fill-opacity="${fillOpacity}" ` +
+        `stroke="${stroke}" stroke-width="${strokeWidth}" stroke-opacity="${strokeOpacity}"${dashArray}/>`;
+      cellSvg.push(
+        glow === "filter" ? `<g filter="url(#softGlow)">${rhombus}</g>${rhombus}` : rhombus,
+      );
+    } else if (isHexagon) {
+      // Matches real draw.io's default hexagon inset (~25% of width for
+      // the slanted side cuts).
+      const inset = w * 0.25;
+      const points: Array<[number, number]> = [
+        [x + inset, y],
+        [x + w - inset, y],
+        [x + w, y + h / 2],
+        [x + w - inset, y + h],
+        [x + inset, y + h],
+        [x, y + h / 2],
+      ];
+      const hexagon =
+        `<polygon points="${polygonPoints(points)}" fill="${fillRef}" fill-opacity="${fillOpacity}" ` +
+        `stroke="${stroke}" stroke-width="${strokeWidth}" stroke-opacity="${strokeOpacity}"${dashArray}/>`;
+      cellSvg.push(
+        glow === "filter" ? `<g filter="url(#softGlow)">${hexagon}</g>${hexagon}` : hexagon,
       );
     } else {
       const rect =
         `<rect x="${x}" y="${y}" width="${w}" height="${h}" rx="${rx}" ` +
-        `fill="${fillRef}" stroke="${stroke}" stroke-width="${strokeWidth}" stroke-opacity="1"/>`;
-      nodeSvg.push(glow === "filter" ? `<g filter="url(#softGlow)">${rect}</g>${rect}` : rect);
+        `fill="${fillRef}" fill-opacity="${fillOpacity}" stroke="${stroke}" ` +
+        `stroke-width="${strokeWidth}" stroke-opacity="${strokeOpacity}"${dashArray}/>`;
+      cellSvg.push(glow === "filter" ? `<g filter="url(#softGlow)">${rect}</g>${rect}` : rect);
     }
 
-    label.split("\n").forEach((line, i) => {
+    const wrap = style.properties.whiteSpace === "wrap";
+    const lines = wrap ? wrapLabel(label, w, fontSize) : label.split("\n");
+    lines.forEach((line, i) => {
       if (rotatedLabel) {
         // Rotate about the label's own anchor point so it reads
         // bottom-to-top along the left edge, matching draw.io's
         // horizontal=0 swimlane title convention.
         const px = x + 16 + spacingLeft;
         const py = y + h / 2;
-        nodeSvg.push(
+        cellSvg.push(
           `<text x="${px.toFixed(1)}" y="${py.toFixed(1)}" text-anchor="middle" ` +
             `font-family="${fontFamily}" font-size="${fontSize}" fill="${fontColor}" ${bold} ` +
             `transform="rotate(-90 ${px.toFixed(1)} ${py.toFixed(1)})">${escapeXml(line)}</text>`,
@@ -351,11 +585,20 @@ export function renderDrawioToSvg(drawioXml: string, options: RenderOptions = {}
         textAnchor = "end";
       }
 
-      nodeSvg.push(
+      cellSvg.push(
         `<text x="${textX}" y="${textY + i * 14}" text-anchor="${textAnchor}" ` +
           `font-family="${fontFamily}" font-size="${fontSize}" fill="${fontColor}" ${bold}>${escapeXml(line)}</text>`,
       );
     });
+
+    const rotation = Number.parseFloat(style.properties.rotation ?? "0");
+    if (!Number.isNaN(rotation) && rotation !== 0) {
+      const cx = x + w / 2;
+      const cy = y + h / 2;
+      nodeSvg.push(`<g transform="rotate(${rotation} ${cx} ${cy})">${cellSvg.join("")}</g>`);
+    } else {
+      nodeSvg.push(...cellSvg);
+    }
   }
 
   /**
@@ -378,16 +621,73 @@ export function renderDrawioToSvg(drawioXml: string, options: RenderOptions = {}
   const margin = 20;
   const diagramWidth = modelPageWidth || (bboxRight ? bboxRight + margin : 850);
   const diagramHeight = modelPageHeight || (bboxBottom ? bboxBottom + margin : 700);
-  const width = options.width ?? diagramWidth;
-  const height = options.height ?? diagramHeight;
+
+  return { nodeSvg, edgeSvg, width: diagramWidth, height: diagramHeight };
+}
+
+/** Gap in px drawn between stacked pages when a document has more than one. */
+const PAGE_GAP = 40;
+
+/**
+ * Renders every page of a `.drawio` document as an approximate SVG,
+ * reusing the document model (handles both inline and compressed page
+ * content transparently). Multiple pages are stacked vertically, each
+ * translated into its own band of the canvas, rather than silently
+ * dropping everything after the first page.
+ */
+export function renderDrawioToSvg(drawioXml: string, options: RenderOptions = {}): string {
+  const { background = "#ffffff", glow = "none" } = options;
+
+  const doc = loadDrawioDocument(drawioXml);
+  const pages = getPages(doc);
+  const modelXmls =
+    pages.length > 0 ? pages.map((p) => p.getModelXml()) : ["<mxGraphModel><root/></mxGraphModel>"];
+
+  const defs: string[] = [
+    '<marker id="arrow" markerWidth="10" markerHeight="10" refX="8" ' +
+      'refY="3" orient="auto"><path d="M0,0 L0,6 L9,3 z" fill="#888"/></marker>',
+    '<marker id="arrowStart" markerWidth="10" markerHeight="10" refX="1" ' +
+      'refY="3" orient="auto-start-reverse"><path d="M0,0 L0,6 L9,3 z" fill="#888"/></marker>',
+    '<marker id="diamond" markerWidth="12" markerHeight="8" refX="10" refY="4" ' +
+      'orient="auto"><path d="M0,4 L6,0 L12,4 L6,8 z" fill="#888"/></marker>',
+    '<marker id="diamondStart" markerWidth="12" markerHeight="8" refX="2" refY="4" ' +
+      'orient="auto-start-reverse"><path d="M0,4 L6,0 L12,4 L6,8 z" fill="#888"/></marker>',
+    '<marker id="oval" markerWidth="8" markerHeight="8" refX="6" refY="4" ' +
+      'orient="auto"><circle cx="4" cy="4" r="3.5" fill="#888"/></marker>',
+    '<marker id="ovalStart" markerWidth="8" markerHeight="8" refX="2" refY="4" ' +
+      'orient="auto-start-reverse"><circle cx="4" cy="4" r="3.5" fill="#888"/></marker>',
+  ];
+  if (glow === "filter") {
+    defs.push(
+      '<filter id="softGlow" x="-60%" y="-60%" width="220%" height="220%">' +
+        '<feGaussianBlur in="SourceGraphic" stdDeviation="4" result="blur"/>' +
+        '<feMerge><feMergeNode in="blur"/><feMergeNode in="blur"/><feMergeNode in="SourceGraphic"/></feMerge>' +
+        "</filter>",
+    );
+  }
+  const gradientIds = new Map<string, string>();
+
+  let canvasWidth = 0;
+  let yOffset = 0;
+  const pageGroups: string[] = [];
+  for (const modelXml of modelXmls) {
+    const page = renderPage(modelXml, glow, defs, gradientIds);
+    canvasWidth = Math.max(canvasWidth, page.width);
+    const translate = yOffset === 0 ? "" : ` transform="translate(0,${yOffset})"`;
+    pageGroups.push(`<g${translate}>${[...page.edgeSvg, ...page.nodeSvg].join("\n")}</g>`);
+    yOffset += page.height + PAGE_GAP;
+  }
+  const canvasHeight = yOffset > 0 ? yOffset - PAGE_GAP : 0;
+
+  const width = options.width ?? canvasWidth;
+  const height = options.height ?? canvasHeight;
 
   const parts = [
     `<svg xmlns="http://www.w3.org/2000/svg" width="${width}" height="${height}" ` +
-      `viewBox="0 0 ${diagramWidth} ${diagramHeight}">`,
-    `<rect width="${diagramWidth}" height="${diagramHeight}" fill="${background}"/>`,
+      `viewBox="0 0 ${canvasWidth} ${canvasHeight}">`,
+    `<rect width="${canvasWidth}" height="${canvasHeight}" fill="${background}"/>`,
     `<defs>${defs.join("")}</defs>`,
-    ...edgeSvg,
-    ...nodeSvg,
+    ...pageGroups,
     "</svg>",
   ];
   return parts.join("\n");
