@@ -570,4 +570,34 @@ describe("renderDrawioToSvg", () => {
     expect(svg).toContain(">Bold &amp; safe<");
     expect(svg).not.toContain("&lt;b&gt;");
   });
+
+  it("positions an edge-label child cell along the edge's real path instead of at (0,0) (issue #14)", () => {
+    const xml = drawio(
+      '<mxCell id="0"/><mxCell id="1" parent="0"/>' +
+        '<mxCell id="n1" style="" vertex="1" parent="1"><mxGeometry x="0" y="0" width="100" height="100" as="geometry"/></mxCell>' +
+        '<mxCell id="n2" style="" vertex="1" parent="1"><mxGeometry x="300" y="0" width="100" height="100" as="geometry"/></mxCell>' +
+        '<mxCell id="e1" style="" edge="1" parent="1" source="n1" target="n2">' +
+        '<mxGeometry relative="1" as="geometry"/></mxCell>' +
+        '<mxCell id="lbl1" value="Edge Label" style="" vertex="1" connectable="0" parent="e1">' +
+        '<mxGeometry x="0" y="0" width="40" height="20" relative="1" as="geometry">' +
+        '<mxPoint x="0" y="-10" as="offset"/></mxGeometry></mxCell>',
+    );
+
+    const svg = renderDrawioToSvg(xml);
+
+    // The edge runs from n1's right border (x=100,y=50) to n2's left
+    // border (x=300,y=50); the label's x=0 geometry is the path midpoint
+    // (200,50), plus the offset's y=-10 -> label center ~ (200, 40), so
+    // its box (width 40, height 20) should sit around x=180, y=30 - not
+    // clipped to ~(0,0) like the pre-fix bug produced.
+    expect(svg).toContain(">Edge Label<");
+    const match = svg.match(/<text x="([\d.-]+)" y="([\d.-]+)"[^>]*>Edge Label</);
+    expect(match).not.toBeNull();
+    const textX = Number(match?.[1]);
+    const textY = Number(match?.[2]);
+    expect(textX).toBeGreaterThan(150);
+    expect(textX).toBeLessThan(250);
+    expect(textY).toBeGreaterThan(20);
+    expect(textY).toBeLessThan(60);
+  });
 });
