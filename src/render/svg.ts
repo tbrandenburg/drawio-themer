@@ -158,6 +158,32 @@ function wrapLabel(label: string, width: number, fontSize: string): string[] {
 }
 
 /**
+ * A label with `html=1` in its style stores real (draw.io-editor-authored)
+ * HTML markup as its `value` (e.g. `Line 1<br>Line 2`, `<div>...</div>`,
+ * `&amp;`) rather than plain text - draw.io's own renderer feeds this
+ * straight into a `foreignObject`/DOM node. This renderer has no HTML
+ * layout engine, so instead: turn block-ish/line-break tags into `\n`
+ * (consumed by the existing per-line label splitting), strip every other
+ * tag, and decode the handful of entities draw.io commonly emits, so at
+ * least the plain text content shows up instead of raw `<br>`/`&nbsp;`
+ * (issue #17).
+ */
+function htmlLabelToPlainText(html: string): string {
+  return html
+    .replace(/<br\s*\/?>/gi, "\n")
+    .replace(/<\/(div|p|li)>/gi, "\n")
+    .replace(/<[^>]+>/g, "")
+    .replace(/&nbsp;/g, " ")
+    .replace(/&amp;/g, "&")
+    .replace(/&lt;/g, "<")
+    .replace(/&gt;/g, ">")
+    .replace(/&quot;/g, '"')
+    .replace(/&#39;/g, "'")
+    .replace(/\n{2,}/g, "\n")
+    .trim();
+}
+
+/**
  * draw.io stores embedded images as `image=data:image/png,<base64>` -
  * deliberately omitting the RFC 2397 `;base64,` marker, since the style
  * string itself uses `;` as its property delimiter (real draw.io's own
@@ -289,6 +315,29 @@ function renderPage(
       w: numAttr(geo, "width"),
       h: numAttr(geo, "height"),
     });
+  }
+
+  /**
+   * draw.io allows node geometry with negative x/y (content placed left of
+   * or above the page origin), but this renderer's canvas always starts
+   * at (0,0) with a hardcoded `viewBox="0 0 w h"` - anything at a
+   * negative coordinate got silently clipped off-canvas (issue #15).
+   * Rather than compute a negative-origin viewBox (which would also
+   * require shifting every marker/gradient/background rect), shift every
+   * node's absolute geometry so the leftmost/topmost content lands at 0,
+   * preserving all relative positions and topology.
+   */
+  let minX = 0;
+  let minY = 0;
+  for (const geo of nodeGeo.values()) {
+    minX = Math.min(minX, geo.x);
+    minY = Math.min(minY, geo.y);
+  }
+  if (minX < 0 || minY < 0) {
+    for (const geo of nodeGeo.values()) {
+      geo.x -= minX;
+      geo.y -= minY;
+    }
   }
 
   function center(id: string | null): [number, number] | null {
@@ -469,6 +518,8 @@ function renderPage(
     const isRhombus = shape === "rhombus" || style.tokens.includes("rhombus");
     const isHexagon = shape === "hexagon";
     const label = cell.getAttribute("value") ?? "";
+    const isHtmlLabel = style.properties.html === "1";
+    const plainLabel = isHtmlLabel ? htmlLabelToPlainText(label) : label;
     const fontFamily = `${style.properties.fontFamily ?? ""}, ${FONT_FALLBACK_STACK}`.replace(
       /^,\s*/,
       "",
@@ -559,13 +610,17 @@ function renderPage(
     }
 
     const wrap = style.properties.whiteSpace === "wrap";
-    const lines = wrap ? wrapLabel(label, w, fontSize) : label.split("\n");
+    const lines = wrap ? wrapLabel(plainLabel, w, fontSize) : plainLabel.split("\n");
     lines.forEach((line, i) => {
       if (rotatedLabel) {
         // Rotate about the label's own anchor point so it reads
         // bottom-to-top along the left edge, matching draw.io's
         // horizontal=0 swimlane title convention.
-        const px = x + 16 + spacingLeft;
+        // Center the whole label block on the mid-point, then offset each
+        // line by i * 14 along the (pre-rotation) x-axis so lines don't
+        // overlap - matches the unrotated branch's `textY + i * 14` offset,
+        // just applied before the -90deg rotation is applied.
+        const px = x + 16 + spacingLeft + i * 14;
         const py = y + h / 2;
         cellSvg.push(
           `<text x="${px.toFixed(1)}" y="${py.toFixed(1)}" text-anchor="middle" ` +

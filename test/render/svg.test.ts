@@ -510,4 +510,64 @@ describe("renderDrawioToSvg", () => {
 
     expect(svg).toContain('<g transform="rotate(45 25 25)">');
   });
+
+  it("shifts negative-coordinate content back onto the canvas instead of clipping it (issue #15)", () => {
+    const xml = drawio(
+      '<mxCell id="0"/><mxCell id="1" parent="0"/>' +
+        '<mxCell id="n1" value="Offscreen" style="" vertex="1" parent="1">' +
+        '<mxGeometry x="-200" y="-100" width="50" height="50" as="geometry"/></mxCell>' +
+        '<mxCell id="n2" value="Onscreen" style="" vertex="1" parent="1">' +
+        '<mxGeometry x="0" y="0" width="50" height="50" as="geometry"/></mxCell>',
+    );
+
+    const svg = renderDrawioToSvg(xml);
+
+    // Both nodes shift by (+200,+100) so the leftmost/topmost content
+    // lands at (0,0); relative spacing between them (200,100) is preserved.
+    expect(svg).toContain('<rect x="0" y="0" width="50" height="50"');
+    expect(svg).toContain('<rect x="200" y="100" width="50" height="50"');
+    expect(svg).not.toContain('x="-200"');
+    expect(svg).not.toContain('x="-100"');
+  });
+
+  it("offsets each line of a rotated multi-line title so lines don't overlap (issue #16)", () => {
+    const xml = drawio(
+      '<mxCell id="0"/><mxCell id="1" parent="0"/>' +
+        '<mxCell id="panel" value="Line One&#10;Line Two" style="container=1;horizontal=0;" ' +
+        'vertex="1" parent="1"><mxGeometry x="0" y="0" width="40" height="300" as="geometry"/></mxCell>',
+    );
+
+    const svg = renderDrawioToSvg(xml);
+
+    const xs = [...svg.matchAll(/<text x="([\d.]+)"/g)].map((m) => Number(m[1]));
+    expect(xs).toHaveLength(2);
+    expect(xs[0]).not.toBe(xs[1]);
+  });
+
+  it("converts html=1 labels with <br> into separate lines instead of a literal <br> tag (issue #17)", () => {
+    const xml = drawio(
+      '<mxCell id="0"/><mxCell id="1" parent="0"/>' +
+        '<mxCell id="n1" value="Line 1&lt;br&gt;Line 2" style="html=1;" vertex="1" parent="1">' +
+        '<mxGeometry x="0" y="0" width="100" height="50" as="geometry"/></mxCell>',
+    );
+
+    const svg = renderDrawioToSvg(xml);
+
+    expect(svg).not.toContain("<br");
+    expect(svg).toContain(">Line 1<");
+    expect(svg).toContain(">Line 2<");
+  });
+
+  it("strips other HTML tags and decodes entities in an html=1 label (issue #17)", () => {
+    const xml = drawio(
+      '<mxCell id="0"/><mxCell id="1" parent="0"/>' +
+        '<mxCell id="n1" value="&lt;b&gt;Bold&lt;/b&gt; &amp; safe" style="html=1;" vertex="1" parent="1">' +
+        '<mxGeometry x="0" y="0" width="100" height="50" as="geometry"/></mxCell>',
+    );
+
+    const svg = renderDrawioToSvg(xml);
+
+    expect(svg).toContain(">Bold &amp; safe<");
+    expect(svg).not.toContain("&lt;b&gt;");
+  });
 });
