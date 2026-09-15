@@ -10,6 +10,12 @@ import type { ApplyOptions } from "../src/types.js";
 
 const PNG_MAGIC = Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]);
 
+// resvg's native font scan is a fixed per-worker-process startup cost; under
+// parallel worker load (see vitest.config.ts's maxWorkers cap) it can push a
+// PNG-rendering test past Vitest's default 5000ms timeout even though the
+// test itself is correct (see issue #19). Give these tests extra headroom.
+const PNG_TEST_TIMEOUT_MS = 15000;
+
 async function expectPngFile(path: string): Promise<void> {
   const bytes = await readFile(path);
   expect(bytes.subarray(0, 8)).toEqual(PNG_MAGIC);
@@ -153,131 +159,163 @@ describe("applyCommand", () => {
 });
 
 describe("applyCommand --png-original / --png-themed", () => {
-  it("writes both PNGs with valid magic bytes when both flags are given", async () => {
-    const dir = await mkdtemp(join(tmpdir(), "drawio-themer-"));
-    const output = join(dir, "output.drawio");
-    const pngOriginal = join(dir, "before.png");
-    const pngThemed = join(dir, "after.png");
+  it(
+    "writes both PNGs with valid magic bytes when both flags are given",
+    { timeout: PNG_TEST_TIMEOUT_MS },
+    async () => {
+      const dir = await mkdtemp(join(tmpdir(), "drawio-themer-"));
+      const output = join(dir, "output.drawio");
+      const pngOriginal = join(dir, "before.png");
+      const pngThemed = join(dir, "after.png");
 
-    await applyCommand(SIMPLE_FIXTURE, { ...baseOptions, output, pngOriginal, pngThemed });
+      await applyCommand(SIMPLE_FIXTURE, { ...baseOptions, output, pngOriginal, pngThemed });
 
-    await expectPngFile(pngOriginal);
-    await expectPngFile(pngThemed);
+      await expectPngFile(pngOriginal);
+      await expectPngFile(pngThemed);
 
-    await rm(dir, { recursive: true, force: true });
-  });
+      await rm(dir, { recursive: true, force: true });
+    },
+  );
 
-  it("writes only --png-original when --png-themed is omitted", async () => {
-    const dir = await mkdtemp(join(tmpdir(), "drawio-themer-"));
-    const output = join(dir, "output.drawio");
-    const pngOriginal = join(dir, "before.png");
-    const pngThemed = join(dir, "after.png");
+  it(
+    "writes only --png-original when --png-themed is omitted",
+    { timeout: PNG_TEST_TIMEOUT_MS },
+    async () => {
+      const dir = await mkdtemp(join(tmpdir(), "drawio-themer-"));
+      const output = join(dir, "output.drawio");
+      const pngOriginal = join(dir, "before.png");
+      const pngThemed = join(dir, "after.png");
 
-    await applyCommand(SIMPLE_FIXTURE, { ...baseOptions, output, pngOriginal });
+      await applyCommand(SIMPLE_FIXTURE, { ...baseOptions, output, pngOriginal });
 
-    await expectPngFile(pngOriginal);
-    await expectMissing(pngThemed);
+      await expectPngFile(pngOriginal);
+      await expectMissing(pngThemed);
 
-    await rm(dir, { recursive: true, force: true });
-  });
+      await rm(dir, { recursive: true, force: true });
+    },
+  );
 
-  it("writes only --png-themed when --png-original is omitted", async () => {
-    const dir = await mkdtemp(join(tmpdir(), "drawio-themer-"));
-    const output = join(dir, "output.drawio");
-    const pngOriginal = join(dir, "before.png");
-    const pngThemed = join(dir, "after.png");
+  it(
+    "writes only --png-themed when --png-original is omitted",
+    { timeout: PNG_TEST_TIMEOUT_MS },
+    async () => {
+      const dir = await mkdtemp(join(tmpdir(), "drawio-themer-"));
+      const output = join(dir, "output.drawio");
+      const pngOriginal = join(dir, "before.png");
+      const pngThemed = join(dir, "after.png");
 
-    await applyCommand(SIMPLE_FIXTURE, { ...baseOptions, output, pngThemed });
+      await applyCommand(SIMPLE_FIXTURE, { ...baseOptions, output, pngThemed });
 
-    await expectMissing(pngOriginal);
-    await expectPngFile(pngThemed);
+      await expectMissing(pngOriginal);
+      await expectPngFile(pngThemed);
 
-    await rm(dir, { recursive: true, force: true });
-  });
+      await rm(dir, { recursive: true, force: true });
+    },
+  );
 
-  it("writes neither PNG when neither flag is given", async () => {
-    const dir = await mkdtemp(join(tmpdir(), "drawio-themer-"));
-    const output = join(dir, "output.drawio");
-    const pngOriginal = join(dir, "before.png");
-    const pngThemed = join(dir, "after.png");
+  it(
+    "writes neither PNG when neither flag is given",
+    { timeout: PNG_TEST_TIMEOUT_MS },
+    async () => {
+      const dir = await mkdtemp(join(tmpdir(), "drawio-themer-"));
+      const output = join(dir, "output.drawio");
+      const pngOriginal = join(dir, "before.png");
+      const pngThemed = join(dir, "after.png");
 
-    await applyCommand(SIMPLE_FIXTURE, { ...baseOptions, output });
+      await applyCommand(SIMPLE_FIXTURE, { ...baseOptions, output });
 
-    await expectMissing(pngOriginal);
-    await expectMissing(pngThemed);
+      await expectMissing(pngOriginal);
+      await expectMissing(pngThemed);
 
-    await rm(dir, { recursive: true, force: true });
-  });
+      await rm(dir, { recursive: true, force: true });
+    },
+  );
 
-  it("renders --png-themed with the theme's own dark background, not white", async () => {
-    const dir = await mkdtemp(join(tmpdir(), "drawio-themer-"));
-    const output = join(dir, "output.drawio");
-    const pngThemed = join(dir, "after.png");
+  it(
+    "renders --png-themed with the theme's own dark background, not white",
+    { timeout: PNG_TEST_TIMEOUT_MS },
+    async () => {
+      const dir = await mkdtemp(join(tmpdir(), "drawio-themer-"));
+      const output = join(dir, "output.drawio");
+      const pngThemed = join(dir, "after.png");
 
-    await applyCommand(SIMPLE_FIXTURE, { ...baseOptions, theme: "nord", output, pngThemed });
+      await applyCommand(SIMPLE_FIXTURE, { ...baseOptions, theme: "nord", output, pngThemed });
 
-    const [r, g, b] = await readTopLeftPixelRgb(pngThemed);
-    // nord.yaml's `background` token is #2e3440 (46, 52, 64) - assert the
-    // canvas corner is dark, not the renderer's white default (255,255,255).
-    expect(r).toBeLessThan(80);
-    expect(g).toBeLessThan(80);
-    expect(b).toBeLessThan(80);
+      const [r, g, b] = await readTopLeftPixelRgb(pngThemed);
+      // nord.yaml's `background` token is #2e3440 (46, 52, 64) - assert the
+      // canvas corner is dark, not the renderer's white default (255,255,255).
+      expect(r).toBeLessThan(80);
+      expect(g).toBeLessThan(80);
+      expect(b).toBeLessThan(80);
 
-    await rm(dir, { recursive: true, force: true });
-  });
+      await rm(dir, { recursive: true, force: true });
+    },
+  );
 
-  it("renders --png-original with a white background regardless of the target theme", async () => {
-    const dir = await mkdtemp(join(tmpdir(), "drawio-themer-"));
-    const output = join(dir, "output.drawio");
-    const pngOriginal = join(dir, "before.png");
+  it(
+    "renders --png-original with a white background regardless of the target theme",
+    { timeout: PNG_TEST_TIMEOUT_MS },
+    async () => {
+      const dir = await mkdtemp(join(tmpdir(), "drawio-themer-"));
+      const output = join(dir, "output.drawio");
+      const pngOriginal = join(dir, "before.png");
 
-    await applyCommand(SIMPLE_FIXTURE, { ...baseOptions, theme: "nord", output, pngOriginal });
+      await applyCommand(SIMPLE_FIXTURE, { ...baseOptions, theme: "nord", output, pngOriginal });
 
-    const [r, g, b] = await readTopLeftPixelRgb(pngOriginal);
-    expect([r, g, b]).toEqual([255, 255, 255]);
+      const [r, g, b] = await readTopLeftPixelRgb(pngOriginal);
+      expect([r, g, b]).toEqual([255, 255, 255]);
 
-    await rm(dir, { recursive: true, force: true });
-  });
+      await rm(dir, { recursive: true, force: true });
+    },
+  );
 
-  it("enables the glow filter for --png-themed on a glow:true theme, not on --png-original", async () => {
-    const dir = await mkdtemp(join(tmpdir(), "drawio-themer-"));
-    const output = join(dir, "output.drawio");
-    const pngOriginal = join(dir, "before.png");
-    const pngThemed = join(dir, "after.png");
-    const spy = vi.spyOn(svgRenderer, "renderDrawioToSvg");
+  it(
+    "enables the glow filter for --png-themed on a glow:true theme, not on --png-original",
+    { timeout: PNG_TEST_TIMEOUT_MS },
+    async () => {
+      const dir = await mkdtemp(join(tmpdir(), "drawio-themer-"));
+      const output = join(dir, "output.drawio");
+      const pngOriginal = join(dir, "before.png");
+      const pngThemed = join(dir, "after.png");
+      const spy = vi.spyOn(svgRenderer, "renderDrawioToSvg");
 
-    await applyCommand(SIMPLE_FIXTURE, {
-      ...baseOptions,
-      theme: "dracula",
-      output,
-      pngOriginal,
-      pngThemed,
-    });
+      await applyCommand(SIMPLE_FIXTURE, {
+        ...baseOptions,
+        theme: "dracula",
+        output,
+        pngOriginal,
+        pngThemed,
+      });
 
-    expect(spy).toHaveBeenCalledTimes(2);
-    const [, originalOptions] = spy.mock.calls[0]!;
-    const [, themedOptions] = spy.mock.calls[1]!;
-    expect(originalOptions?.glow).not.toBe("filter");
-    expect(themedOptions?.glow).toBe("filter");
+      expect(spy).toHaveBeenCalledTimes(2);
+      const [, originalOptions] = spy.mock.calls[0]!;
+      const [, themedOptions] = spy.mock.calls[1]!;
+      expect(originalOptions?.glow).not.toBe("filter");
+      expect(themedOptions?.glow).toBe("filter");
 
-    spy.mockRestore();
-    await rm(dir, { recursive: true, force: true });
-  });
+      spy.mockRestore();
+      await rm(dir, { recursive: true, force: true });
+    },
+  );
 
-  it("does not enable the glow filter for a glow:false (default) theme", async () => {
-    const dir = await mkdtemp(join(tmpdir(), "drawio-themer-"));
-    const output = join(dir, "output.drawio");
-    const pngThemed = join(dir, "after.png");
-    const spy = vi.spyOn(svgRenderer, "renderDrawioToSvg");
+  it(
+    "does not enable the glow filter for a glow:false (default) theme",
+    { timeout: PNG_TEST_TIMEOUT_MS },
+    async () => {
+      const dir = await mkdtemp(join(tmpdir(), "drawio-themer-"));
+      const output = join(dir, "output.drawio");
+      const pngThemed = join(dir, "after.png");
+      const spy = vi.spyOn(svgRenderer, "renderDrawioToSvg");
 
-    await applyCommand(SIMPLE_FIXTURE, { ...baseOptions, theme: "nord", output, pngThemed });
+      await applyCommand(SIMPLE_FIXTURE, { ...baseOptions, theme: "nord", output, pngThemed });
 
-    const [, themedOptions] = spy.mock.calls[0]!;
-    expect(themedOptions?.glow).not.toBe("filter");
+      const [, themedOptions] = spy.mock.calls[0]!;
+      expect(themedOptions?.glow).not.toBe("filter");
 
-    spy.mockRestore();
-    await rm(dir, { recursive: true, force: true });
-  });
+      spy.mockRestore();
+      await rm(dir, { recursive: true, force: true });
+    },
+  );
 });
 
 describe("applyCommand --svg-original / --svg-themed", () => {
