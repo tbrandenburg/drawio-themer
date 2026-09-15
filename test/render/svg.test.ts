@@ -313,4 +313,201 @@ describe("renderDrawioToSvg", () => {
     expect(svg).toMatch(/transform="rotate\(-90 /);
     expect(svg).toContain(">Side Panel<");
   });
+
+  it("renders all pages of a multi-page document, not just the first", () => {
+    const xml =
+      '<mxfile host="test"><diagram id="p1" name="Page-1"><mxGraphModel><root>' +
+      '<mxCell id="0"/><mxCell id="1" parent="0"/>' +
+      '<mxCell id="n1" value="PageOneNode" style="" vertex="1" parent="1">' +
+      '<mxGeometry x="0" y="0" width="100" height="50" as="geometry"/></mxCell>' +
+      "</root></mxGraphModel></diagram>" +
+      '<diagram id="p2" name="Page-2"><mxGraphModel><root>' +
+      '<mxCell id="0"/><mxCell id="1" parent="0"/>' +
+      '<mxCell id="n2" value="PageTwoNode" style="" vertex="1" parent="1">' +
+      '<mxGeometry x="0" y="0" width="100" height="50" as="geometry"/></mxCell>' +
+      "</root></mxGraphModel></diagram></mxfile>";
+
+    const svg = renderDrawioToSvg(xml);
+
+    expect(svg).toContain(">PageOneNode<");
+    expect(svg).toContain(">PageTwoNode<");
+  });
+
+  it("wraps a long label onto multiple lines when whiteSpace=wrap is set", () => {
+    const xml = drawio(
+      '<mxCell id="0"/><mxCell id="1" parent="0"/>' +
+        '<mxCell id="n1" value="This is a fairly long label that must wrap" ' +
+        'style="whiteSpace=wrap;" vertex="1" parent="1">' +
+        '<mxGeometry x="0" y="0" width="60" height="50" as="geometry"/></mxCell>',
+    );
+
+    const svg = renderDrawioToSvg(xml);
+
+    const textCount = (svg.match(/<text /g) ?? []).length;
+    expect(textCount).toBeGreaterThan(1);
+  });
+
+  it("does not wrap a label when whiteSpace=wrap is absent, even if it overflows", () => {
+    const xml = drawio(
+      '<mxCell id="0"/><mxCell id="1" parent="0"/>' +
+        '<mxCell id="n1" value="This is a fairly long label" style="" vertex="1" parent="1">' +
+        '<mxGeometry x="0" y="0" width="60" height="50" as="geometry"/></mxCell>',
+    );
+
+    const svg = renderDrawioToSvg(xml);
+
+    const textCount = (svg.match(/<text /g) ?? []).length;
+    expect(textCount).toBe(1);
+  });
+
+  it("renders a dashed node/edge with stroke-dasharray instead of a solid line", () => {
+    const xml = drawio(
+      '<mxCell id="0"/><mxCell id="1" parent="0"/>' +
+        '<mxCell id="n1" style="dashed=1;" vertex="1" parent="1">' +
+        '<mxGeometry x="0" y="0" width="50" height="50" as="geometry"/></mxCell>' +
+        '<mxCell id="n2" style="dashed=1;" vertex="1" parent="1">' +
+        '<mxGeometry x="200" y="0" width="50" height="50" as="geometry"/></mxCell>' +
+        '<mxCell id="e1" style="dashed=1;" edge="1" parent="1" source="n1" target="n2">' +
+        '<mxGeometry relative="1" as="geometry"/></mxCell>',
+    );
+
+    const svg = renderDrawioToSvg(xml);
+
+    expect(svg).toContain(
+      '<rect x="0" y="0" width="50" height="50" rx="0" fill="#ffffff" fill-opacity="1" stroke="#000000" stroke-width="1" stroke-opacity="1" stroke-dasharray="4,4"',
+    );
+    expect(svg).toContain('stroke-dasharray="4,4"/>');
+  });
+
+  it("applies a custom dashPattern verbatim as the stroke-dasharray", () => {
+    const xml = drawio(
+      '<mxCell id="0"/><mxCell id="1" parent="0"/>' +
+        '<mxCell id="n1" style="dashed=1;dashPattern=8 4;" vertex="1" parent="1">' +
+        '<mxGeometry x="0" y="0" width="50" height="50" as="geometry"/></mxCell>',
+    );
+
+    const svg = renderDrawioToSvg(xml);
+
+    expect(svg).toContain('stroke-dasharray="8,4"');
+  });
+
+  it("does not add stroke-dasharray for a non-dashed node", () => {
+    const xml = drawio(
+      '<mxCell id="0"/><mxCell id="1" parent="0"/>' +
+        '<mxCell id="n1" style="" vertex="1" parent="1">' +
+        '<mxGeometry x="0" y="0" width="50" height="50" as="geometry"/></mxCell>',
+    );
+
+    const svg = renderDrawioToSvg(xml);
+
+    expect(svg).not.toContain("stroke-dasharray");
+  });
+
+  it("applies fillOpacity/strokeOpacity style properties instead of a hardcoded 1", () => {
+    const xml = drawio(
+      '<mxCell id="0"/><mxCell id="1" parent="0"/>' +
+        '<mxCell id="n1" style="fillOpacity=50;strokeOpacity=30;" vertex="1" parent="1">' +
+        '<mxGeometry x="0" y="0" width="50" height="50" as="geometry"/></mxCell>',
+    );
+
+    const svg = renderDrawioToSvg(xml);
+
+    expect(svg).toContain('fill-opacity="0.5"');
+    expect(svg).toContain('stroke-opacity="0.3"');
+  });
+
+  it("applies an overall opacity to both fill and stroke when fillOpacity/strokeOpacity are unset", () => {
+    const xml = drawio(
+      '<mxCell id="0"/><mxCell id="1" parent="0"/>' +
+        '<mxCell id="n1" style="opacity=40;" vertex="1" parent="1">' +
+        '<mxGeometry x="0" y="0" width="50" height="50" as="geometry"/></mxCell>',
+    );
+
+    const svg = renderDrawioToSvg(xml);
+
+    expect(svg).toContain('fill-opacity="0.4"');
+    expect(svg).toContain('stroke-opacity="0.4"');
+  });
+
+  it("omits the end arrow marker when endArrow=none", () => {
+    const xml = drawio(
+      '<mxCell id="0"/><mxCell id="1" parent="0"/>' +
+        '<mxCell id="n1" style="" vertex="1" parent="1"><mxGeometry x="0" y="0" width="50" height="50" as="geometry"/></mxCell>' +
+        '<mxCell id="n2" style="" vertex="1" parent="1"><mxGeometry x="200" y="0" width="50" height="50" as="geometry"/></mxCell>' +
+        '<mxCell id="e1" style="endArrow=none;" edge="1" parent="1" source="n1" target="n2">' +
+        '<mxGeometry relative="1" as="geometry"/></mxCell>',
+    );
+
+    const svg = renderDrawioToSvg(xml);
+
+    expect(svg).not.toMatch(/marker-end/);
+  });
+
+  it("adds a start arrow marker when startArrow is set to a non-none value", () => {
+    const xml = drawio(
+      '<mxCell id="0"/><mxCell id="1" parent="0"/>' +
+        '<mxCell id="n1" style="" vertex="1" parent="1"><mxGeometry x="0" y="0" width="50" height="50" as="geometry"/></mxCell>' +
+        '<mxCell id="n2" style="" vertex="1" parent="1"><mxGeometry x="200" y="0" width="50" height="50" as="geometry"/></mxCell>' +
+        '<mxCell id="e1" style="startArrow=classic;" edge="1" parent="1" source="n1" target="n2">' +
+        '<mxGeometry relative="1" as="geometry"/></mxCell>',
+    );
+
+    const svg = renderDrawioToSvg(xml);
+
+    expect(svg).toContain('marker-start="url(#arrowStart)"');
+  });
+
+  it("does not render a cell with visible=0", () => {
+    const xml = drawio(
+      '<mxCell id="0"/><mxCell id="1" parent="0"/>' +
+        '<mxCell id="n1" value="Hidden" style="" vertex="1" visible="0" parent="1">' +
+        '<mxGeometry x="0" y="0" width="50" height="50" as="geometry"/></mxCell>',
+    );
+
+    const svg = renderDrawioToSvg(xml);
+
+    expect(svg).not.toContain(">Hidden<");
+  });
+
+  it("does not render children of a collapsed container", () => {
+    const xml = drawio(
+      '<mxCell id="0"/><mxCell id="1" parent="0"/>' +
+        '<mxCell id="box" value="Box" style="container=1;collapsed=1;" vertex="1" parent="1">' +
+        '<mxGeometry x="0" y="0" width="200" height="200" as="geometry"/></mxCell>' +
+        '<mxCell id="child" value="Child" style="" vertex="1" parent="box">' +
+        '<mxGeometry x="10" y="10" width="20" height="20" as="geometry"/></mxCell>',
+    );
+
+    const svg = renderDrawioToSvg(xml);
+
+    expect(svg).toContain(">Box<");
+    expect(svg).not.toContain(">Child<");
+  });
+
+  it("renders a plain group wrapper cell as invisible (no rect/label)", () => {
+    const xml = drawio(
+      '<mxCell id="0"/><mxCell id="1" parent="0"/>' +
+        '<mxCell id="g1" value="ShouldNotShow" style="group;" vertex="1" parent="1">' +
+        '<mxGeometry x="0" y="0" width="200" height="200" as="geometry"/></mxCell>' +
+        '<mxCell id="child" value="Child" style="" vertex="1" parent="g1">' +
+        '<mxGeometry x="10" y="10" width="20" height="20" as="geometry"/></mxCell>',
+    );
+
+    const svg = renderDrawioToSvg(xml);
+
+    expect(svg).not.toContain(">ShouldNotShow<");
+    expect(svg).toContain(">Child<");
+  });
+
+  it("applies a rotation transform to a node with a rotation style", () => {
+    const xml = drawio(
+      '<mxCell id="0"/><mxCell id="1" parent="0"/>' +
+        '<mxCell id="n1" style="rotation=45;" vertex="1" parent="1">' +
+        '<mxGeometry x="0" y="0" width="50" height="50" as="geometry"/></mxCell>',
+    );
+
+    const svg = renderDrawioToSvg(xml);
+
+    expect(svg).toContain('<g transform="rotate(45 25 25)">');
+  });
 });
