@@ -15,9 +15,42 @@
  * function call.
  */
 import { Resvg } from "@resvg/resvg-js";
+import { fileURLToPath } from "node:url";
+import { dirname, join } from "node:path";
+
+const MODULE_DIR = dirname(fileURLToPath(import.meta.url));
+
+/**
+ * resvg-js's fontdb does exact family-name matching only - it does not
+ * perform OS-level fontconfig substitution (`fc-match`) the way browsers
+ * or real draw.io do. Relying purely on `FONT_FALLBACK_STACK`'s family
+ * names being installed on the host silently breaks on any machine
+ * missing all of them (observed: a headless Linux box with only "Noto
+ * Sans Mono" installed, no "Noto Sans"/"Helvetica Neue"/"Arial" - resvg
+ * fell back to an arbitrary monospace font instead of a proportional
+ * sans-serif). Bundling this one OFL-licensed TTF and registering it
+ * explicitly via `font.fontFiles` guarantees "Noto Sans" (the first name
+ * in `FONT_FALLBACK_STACK`, see ../render/svg.ts) always resolves
+ * correctly, independent of what fonts the host happens to have.
+ */
+const BUNDLED_FONT_PATH = join(MODULE_DIR, "assets", "NotoSans-Regular.ttf");
+
+/**
+ * Exported solely so tests can render with `loadSystemFonts: false` -
+ * proving the bundled font file alone (independent of whatever fonts
+ * the host happens to have) resolves "Noto Sans" and produces real
+ * glyphs, not an empty/monospace fallback.
+ */
+export { BUNDLED_FONT_PATH };
 
 /** Rasterizes an SVG document string to a PNG image buffer. */
 export function rasterizeSvgToPng(svg: string): Buffer {
-  const resvg = new Resvg(svg, { font: { loadSystemFonts: true } });
+  const resvg = new Resvg(svg, {
+    font: {
+      fontFiles: [BUNDLED_FONT_PATH],
+      loadSystemFonts: true,
+      defaultFontFamily: "Noto Sans",
+    },
+  });
   return resvg.render().asPng();
 }

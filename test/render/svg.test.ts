@@ -166,4 +166,74 @@ describe("renderDrawioToSvg", () => {
 
     expect(svg).toContain(`font-family="${FONT_FALLBACK_STACK}"`);
   });
+
+  it("renders shape=image cells as an <image> element instead of a blank rect", () => {
+    const xml = drawio(
+      '<mxCell id="0"/><mxCell id="1" parent="0"/>' +
+        '<mxCell id="icon1" value="" style="shape=image;image=data:image/png,ZmFrZQ==;html=1;" ' +
+        'vertex="1" parent="1"><mxGeometry x="10" y="20" width="32" height="32" as="geometry"/></mxCell>',
+    );
+
+    const svg = renderDrawioToSvg(xml);
+
+    expect(svg).toContain('<image x="10" y="20" width="32" height="32"');
+    // draw.io stores embedded images without the RFC 2397 ";base64,"
+    // marker (it clashes with the style string's own ";" delimiter);
+    // the renderer must re-insert it so the data URI actually decodes.
+    expect(svg).toContain('href="data:image/png;base64,ZmFrZQ=="');
+    expect(svg).not.toMatch(/<rect x="10" y="20"/);
+  });
+
+  it("passes a non-data-URI image reference (e.g. a plain URL) through unchanged", () => {
+    const xml = drawio(
+      '<mxCell id="0"/><mxCell id="1" parent="0"/>' +
+        '<mxCell id="icon1" value="" style="shape=image;image=https://example.com/icon.png;html=1;" ' +
+        'vertex="1" parent="1"><mxGeometry x="0" y="0" width="32" height="32" as="geometry"/></mxCell>',
+    );
+
+    const svg = renderDrawioToSvg(xml);
+
+    expect(svg).toContain('href="https://example.com/icon.png"');
+  });
+
+  it("falls back to a plain rect when shape=image has no image data", () => {
+    const xml = drawio(
+      '<mxCell id="0"/><mxCell id="1" parent="0"/>' +
+        '<mxCell id="icon1" value="" style="shape=image;fillColor=#eeeeee;" ' +
+        'vertex="1" parent="1"><mxGeometry x="0" y="0" width="32" height="32" as="geometry"/></mxCell>',
+    );
+
+    const svg = renderDrawioToSvg(xml);
+
+    expect(svg).not.toContain("<image");
+    expect(svg).toContain('<rect x="0" y="0" width="32" height="32"');
+  });
+
+  it("left-aligns a container/swimlane title using align+spacingLeft instead of always centering it", () => {
+    const xml = drawio(
+      '<mxCell id="0"/><mxCell id="1" parent="0"/>' +
+        '<mxCell id="lane" value="1 Experience Layer" ' +
+        'style="container=1;verticalAlign=top;align=left;spacingLeft=10;" vertex="1" parent="1">' +
+        '<mxGeometry x="0" y="0" width="400" height="200" as="geometry"/></mxCell>',
+    );
+
+    const svg = renderDrawioToSvg(xml);
+
+    expect(svg).toContain('text-anchor="start"');
+    expect(svg).toContain('x="14"');
+    expect(svg).not.toContain('x="200"');
+  });
+
+  it("rotates a horizontal=0 swimlane title -90deg along the left edge instead of centering it horizontally", () => {
+    const xml = drawio(
+      '<mxCell id="0"/><mxCell id="1" parent="0"/>' +
+        '<mxCell id="panel" value="Side Panel" style="container=1;horizontal=0;" ' +
+        'vertex="1" parent="1"><mxGeometry x="0" y="0" width="40" height="300" as="geometry"/></mxCell>',
+    );
+
+    const svg = renderDrawioToSvg(xml);
+
+    expect(svg).toMatch(/transform="rotate\(-90 /);
+    expect(svg).toContain(">Side Panel<");
+  });
 });

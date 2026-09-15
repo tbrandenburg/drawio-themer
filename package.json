@@ -19,7 +19,7 @@
     "dist"
   ],
   "scripts": {
-    "build": "tsc && node -e \"require('fs').cpSync('src/themes','dist/themes',{recursive:true})\"",
+    "build": "tsc && node -e \"require('fs').cpSync('src/themes','dist/themes',{recursive:true});require('fs').cpSync('src/render/assets','dist/render/assets',{recursive:true})\"",
     "dev": "tsx src/cli.ts",
     "lint": "eslint .",
     "format": "prettier --write .",

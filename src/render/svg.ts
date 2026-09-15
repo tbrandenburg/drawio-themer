@@ -122,6 +122,23 @@ function escapeXml(text: string): string {
 }
 
 /**
+ * draw.io stores embedded images as `image=data:image/png,<base64>` -
+ * deliberately omitting the RFC 2397 `;base64,` marker, since the style
+ * string itself uses `;` as its property delimiter (real draw.io's own
+ * renderer re-inserts it before setting an `<img>` src). An SVG
+ * `<image>` href needs the RFC-compliant form to actually decode as a
+ * raster image - without this, resvg silently renders nothing instead
+ * of erroring, which looked like a "blank icon" bug rather than a
+ * malformed-URI one.
+ */
+function normalizeDataUri(uri: string): string {
+  const match = /^data:([^,;]+),(.*)$/s.exec(uri);
+  if (!match) return uri;
+  const [, mime, payload] = match;
+  return `data:${mime};base64,${payload}`;
+}
+
+/**
  * Renders the first page of a `.drawio` document as an approximate SVG,
  * reusing the document model (handles both inline and compressed page
  * content transparently).
@@ -273,6 +290,12 @@ export function renderDrawioToSvg(drawioXml: string, options: RenderOptions = {}
     );
     const fontSize = style.properties.fontSize ?? "12";
     const valign = style.properties.verticalAlign ?? "middle";
+    const align = style.properties.align ?? "center";
+    const spacingLeft = Number.parseFloat(style.properties.spacingLeft ?? "0") || 0;
+    // horizontal=0 marks a rotated (vertical) swimlane title, typically a
+    // side panel; its label runs bottom-to-top along the left edge
+    // instead of sitting horizontally centered like a normal node/container.
+    const rotatedLabel = style.properties.horizontal === "0";
     const bold = style.properties.fontStyle === "1" ? 'font-weight="bold"' : "";
     let textY = valign === "top" ? y + 18 : y + h / 2 + 5;
     const fillRef = glow === "filter" ? `url(#${gradientFor(fill)})` : fill;
@@ -287,6 +310,15 @@ export function renderDrawioToSvg(drawioXml: string, options: RenderOptions = {}
         "</g>";
       nodeSvg.push(glow === "filter" ? `<g filter="url(#softGlow)">${cyl}</g>${cyl}` : cyl);
       textY = y + h / 2 + eh / 2;
+    } else if (shape === "image" && style.properties.image) {
+      // shape=image cells (e.g. embedded PNG icons via a data: URI) have
+      // no fill/stroke box in real draw.io - draw the image itself
+      // instead of falling through to the generic filled rect below,
+      // which used to render icons as a blank placeholder rectangle.
+      nodeSvg.push(
+        `<image x="${x}" y="${y}" width="${w}" height="${h}" ` +
+          `href="${escapeXml(normalizeDataUri(style.properties.image))}" preserveAspectRatio="xMidYMid meet"/>`,
+      );
     } else {
       const rect =
         `<rect x="${x}" y="${y}" width="${w}" height="${h}" rx="${rx}" ` +
@@ -295,8 +327,32 @@ export function renderDrawioToSvg(drawioXml: string, options: RenderOptions = {}
     }
 
     label.split("\n").forEach((line, i) => {
+      if (rotatedLabel) {
+        // Rotate about the label's own anchor point so it reads
+        // bottom-to-top along the left edge, matching draw.io's
+        // horizontal=0 swimlane title convention.
+        const px = x + 16 + spacingLeft;
+        const py = y + h / 2;
+        nodeSvg.push(
+          `<text x="${px.toFixed(1)}" y="${py.toFixed(1)}" text-anchor="middle" ` +
+            `font-family="${fontFamily}" font-size="${fontSize}" fill="${fontColor}" ${bold} ` +
+            `transform="rotate(-90 ${px.toFixed(1)} ${py.toFixed(1)})">${escapeXml(line)}</text>`,
+        );
+        return;
+      }
+
+      let textX = x + w / 2;
+      let textAnchor = "middle";
+      if (align === "left") {
+        textX = x + 4 + spacingLeft;
+        textAnchor = "start";
+      } else if (align === "right") {
+        textX = x + w - 4 - spacingLeft;
+        textAnchor = "end";
+      }
+
       nodeSvg.push(
-        `<text x="${x + w / 2}" y="${textY + i * 14}" text-anchor="middle" ` +
+        `<text x="${textX}" y="${textY + i * 14}" text-anchor="${textAnchor}" ` +
           `font-family="${fontFamily}" font-size="${fontSize}" fill="${fontColor}" ${bold}>${escapeXml(line)}</text>`,
       );
     });

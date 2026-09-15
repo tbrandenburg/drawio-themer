@@ -225,3 +225,10 @@ on every pull request.
 ## License
 
 [MIT](LICENSE)
+
+The offline PNG/SVG preview renderer (`--png-*`/`--svg-*` flags) bundles
+`src/render/assets/NotoSans-Regular.ttf` (Noto Sans, SIL Open Font
+License 1.1 — see `src/render/assets/NotoSans-LICENSE.txt`) so labels
+render in a proportional sans-serif font even on hosts without it
+installed, instead of silently falling back to resvg's default
+monospace font.
