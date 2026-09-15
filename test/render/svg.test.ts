@@ -224,6 +224,83 @@ describe("renderDrawioToSvg", () => {
     expect(svg).not.toContain('x="200"');
   });
 
+  it("renders an ellipse shape as an <ellipse>, not a generic rect", () => {
+    const xml = drawio(
+      '<mxCell id="0"/><mxCell id="1" parent="0"/>' +
+        '<mxCell id="n1" value="Decision" style="ellipse;fillColor=#d5e8d4;strokeColor=#82b366;" ' +
+        'vertex="1" parent="1"><mxGeometry x="0" y="0" width="80" height="40" as="geometry"/></mxCell>',
+    );
+
+    const svg = renderDrawioToSvg(xml);
+
+    expect(svg).toContain('<ellipse cx="40" cy="20" rx="40" ry="20"');
+    expect(svg).not.toMatch(/<rect x="0" y="0"/);
+  });
+
+  it("renders a rhombus shape as a diamond <polygon>, not a generic rect", () => {
+    const xml = drawio(
+      '<mxCell id="0"/><mxCell id="1" parent="0"/>' +
+        '<mxCell id="n1" value="Check" style="rhombus;fillColor=#fff2cc;strokeColor=#d6b656;" ' +
+        'vertex="1" parent="1"><mxGeometry x="0" y="0" width="80" height="40" as="geometry"/></mxCell>',
+    );
+
+    const svg = renderDrawioToSvg(xml);
+
+    expect(svg).toMatch(/<polygon points="40\.0,0\.0 80\.0,20\.0 40\.0,40\.0 0\.0,20\.0"/);
+    expect(svg).not.toMatch(/<rect x="0" y="0"/);
+  });
+
+  it("renders shape=hexagon as a hexagonal <polygon>, not a generic rect", () => {
+    const xml = drawio(
+      '<mxCell id="0"/><mxCell id="1" parent="0"/>' +
+        '<mxCell id="n1" value="Step" style="shape=hexagon;fillColor=#f8cecc;strokeColor=#b85450;" ' +
+        'vertex="1" parent="1"><mxGeometry x="0" y="0" width="80" height="40" as="geometry"/></mxCell>',
+    );
+
+    const svg = renderDrawioToSvg(xml);
+
+    expect(svg).toContain("<polygon");
+    expect(svg).not.toMatch(/<rect x="0" y="0"/);
+  });
+
+  it("routes an edge with explicit mxPoint waypoints as a polyline through those points", () => {
+    const xml = drawio(
+      '<mxCell id="0"/><mxCell id="1" parent="0"/>' +
+        '<mxCell id="n1" style="" vertex="1" parent="1"><mxGeometry x="0" y="0" width="100" height="100" as="geometry"/></mxCell>' +
+        '<mxCell id="n2" style="" vertex="1" parent="1"><mxGeometry x="300" y="300" width="100" height="100" as="geometry"/></mxCell>' +
+        '<mxCell id="e1" style="strokeColor=#000000;" edge="1" parent="1" source="n1" target="n2">' +
+        '<mxGeometry relative="1" as="geometry"><Array as="points">' +
+        '<mxPoint x="200" y="50"/></Array></mxGeometry></mxCell>',
+    );
+
+    const svg = renderDrawioToSvg(xml);
+
+    expect(svg).toContain("<polyline");
+    expect(svg).toContain("200.0,50.0");
+    expect(svg).not.toMatch(/<line x1=/);
+  });
+
+  it("connects an edge with exitX/exitY/entryX/entryY at the specified fractional border point", () => {
+    const xml = drawio(
+      '<mxCell id="0"/><mxCell id="1" parent="0"/>' +
+        '<mxCell id="n1" style="" vertex="1" parent="1"><mxGeometry x="0" y="0" width="100" height="100" as="geometry"/></mxCell>' +
+        '<mxCell id="n2" style="" vertex="1" parent="1"><mxGeometry x="300" y="0" width="100" height="100" as="geometry"/></mxCell>' +
+        '<mxCell id="e1" style="edgeStyle=orthogonalEdgeStyle;exitX=1;exitY=0.5;entryX=0;entryY=0.5;" ' +
+        'edge="1" parent="1" source="n1" target="n2"><mxGeometry relative="1" as="geometry"/></mxCell>',
+    );
+
+    const svg = renderDrawioToSvg(xml);
+
+    const match = svg.match(/<line x1="([\d.]+)" y1="([\d.]+)" x2="([\d.]+)" y2="([\d.]+)"/);
+    expect(match).not.toBeNull();
+    // exitX=1,exitY=0.5 on n1 (0,0,100,100) => (100,50); entryX=0,entryY=0.5
+    // on n2 (300,0,100,100) => (300,50).
+    expect(Number(match?.[1])).toBe(100);
+    expect(Number(match?.[2])).toBe(50);
+    expect(Number(match?.[3])).toBe(300);
+    expect(Number(match?.[4])).toBe(50);
+  });
+
   it("rotates a horizontal=0 swimlane title -90deg along the left edge instead of centering it horizontally", () => {
     const xml = drawio(
       '<mxCell id="0"/><mxCell id="1" parent="0"/>' +

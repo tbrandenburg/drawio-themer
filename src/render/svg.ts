@@ -113,6 +113,11 @@ function clipToRect(
   return [cx + dx * scale, cy + dy * scale];
 }
 
+/** Builds a `<polygon points="...">` string from a flat array of [x,y] pairs. */
+function polygonPoints(points: Array<[number, number]>): string {
+  return points.map(([px, py]) => `${px.toFixed(1)},${py.toFixed(1)}`).join(" ");
+}
+
 function escapeXml(text: string): string {
   return text
     .replace(/&/g, "&amp;")
@@ -236,6 +241,33 @@ export function renderDrawioToSvg(drawioXml: string, options: RenderOptions = {}
     return geo ? [geo.x + geo.w / 2, geo.y + geo.h / 2] : null;
   }
 
+  /**
+   * Resolves a node's connection point for an edge endpoint: if the edge
+   * style specifies a fixed fractional connection point (`exitX/exitY` on
+   * the source, `entryX/entryY` on the target), that fraction of the
+   * node's border is used verbatim (matching real draw.io's fixed
+   * connection points); otherwise falls back to `clipToRect`, projecting
+   * from the node's center toward the other endpoint.
+   */
+  function connectionPoint(
+    geo: NodeGeometry,
+    fracX: string | undefined,
+    fracY: string | undefined,
+    otherX: number,
+    otherY: number,
+  ): [number, number] {
+    if (fracX !== undefined && fracY !== undefined) {
+      const fx = Number.parseFloat(fracX);
+      const fy = Number.parseFloat(fracY);
+      if (!Number.isNaN(fx) && !Number.isNaN(fy)) {
+        return [geo.x + geo.w * fx, geo.y + geo.h * fy];
+      }
+    }
+    const cx = geo.x + geo.w / 2;
+    const cy = geo.y + geo.h / 2;
+    return clipToRect(cx, cy, otherX, otherY, geo.w, geo.h);
+  }
+
   const edgeSvg: string[] = [];
   for (const cell of cells) {
     if (cell.getAttribute("edge") !== "1") continue;
@@ -248,18 +280,56 @@ export function renderDrawioToSvg(drawioXml: string, options: RenderOptions = {}
     const sourceGeo = nodeGeo.get(src);
     const targetGeo = nodeGeo.get(tgt);
     if (!sourceGeo || !targetGeo) continue;
-    const [p1x, p1y] = clipToRect(c1[0], c1[1], c2[0], c2[1], sourceGeo.w, sourceGeo.h);
-    const [p2x, p2y] = clipToRect(c2[0], c2[1], c1[0], c1[1], targetGeo.w, targetGeo.h);
+
+    // Explicit waypoints (<mxGeometry relative="1"><Array as="points">)
+    // take priority over the node centers when computing the "toward"
+    // direction for the fixed/clipped connection points, so the line
+    // leaves/enters the node border pointing at the first/last waypoint
+    // rather than at the other node's unrelated center.
+    const edgeGeoNodes = childElements(cell, "mxGeometry");
+    const edgeGeo = edgeGeoNodes[0];
+    const waypoints: Array<[number, number]> = [];
+    if (edgeGeo) {
+      const arrays = childElements(edgeGeo, "Array");
+      const pointsArray = arrays.find((a) => a.getAttribute("as") === "points") ?? arrays[0];
+      if (pointsArray) {
+        for (const pt of childElements(pointsArray, "mxPoint")) {
+          waypoints.push([numAttr(pt, "x"), numAttr(pt, "y")]);
+        }
+      }
+    }
+
+    const towardFromSource = waypoints[0] ?? c2;
+    const towardFromTarget = waypoints[waypoints.length - 1] ?? c1;
+
+    const [p1x, p1y] = connectionPoint(
+      sourceGeo,
+      style.properties.exitX,
+      style.properties.exitY,
+      towardFromSource[0],
+      towardFromSource[1],
+    );
+    const [p2x, p2y] = connectionPoint(
+      targetGeo,
+      style.properties.entryX,
+      style.properties.entryY,
+      towardFromTarget[0],
+      towardFromTarget[1],
+    );
     const stroke = style.properties.strokeColor ?? "#000000";
     const strokeWidth = Number.parseFloat(style.properties.strokeWidth ?? "1");
-    const line =
-      `<line x1="${p1x.toFixed(1)}" y1="${p1y.toFixed(1)}" x2="${p2x.toFixed(1)}" ` +
-      `y2="${p2y.toFixed(1)}" stroke="${stroke}" stroke-width="${strokeWidth}" ` +
-      `stroke-opacity="1" marker-end="url(#arrow)"/>`;
+    const allPoints: Array<[number, number]> = [[p1x, p1y], ...waypoints, [p2x, p2y]];
+    const shape =
+      waypoints.length > 0
+        ? `<polyline points="${polygonPoints(allPoints)}" fill="none" stroke="${stroke}" ` +
+          `stroke-width="${strokeWidth}" stroke-opacity="1" marker-end="url(#arrow)"/>`
+        : `<line x1="${p1x.toFixed(1)}" y1="${p1y.toFixed(1)}" x2="${p2x.toFixed(1)}" ` +
+          `y2="${p2y.toFixed(1)}" stroke="${stroke}" stroke-width="${strokeWidth}" ` +
+          `stroke-opacity="1" marker-end="url(#arrow)"/>`;
     if (glow === "filter") {
-      edgeSvg.push(`<g filter="url(#softGlow)">${line}</g>`);
+      edgeSvg.push(`<g filter="url(#softGlow)">${shape}</g>`);
     } else {
-      edgeSvg.push(line);
+      edgeSvg.push(shape);
     }
   }
 
@@ -283,6 +353,9 @@ export function renderDrawioToSvg(drawioXml: string, options: RenderOptions = {}
     const arc = Number.parseFloat(style.properties.arcSize ?? "0");
     const rx = Number.isNaN(arc) ? 0 : arc <= 100 ? (arc * Math.min(w, h)) / 100 : arc;
     const shape = style.properties.shape ?? "";
+    const isEllipse = shape === "ellipse" || style.tokens.includes("ellipse");
+    const isRhombus = shape === "rhombus" || style.tokens.includes("rhombus");
+    const isHexagon = shape === "hexagon";
     const label = cell.getAttribute("value") ?? "";
     const fontFamily = `${style.properties.fontFamily ?? ""}, ${FONT_FALLBACK_STACK}`.replace(
       /^,\s*/,
@@ -318,6 +391,44 @@ export function renderDrawioToSvg(drawioXml: string, options: RenderOptions = {}
       nodeSvg.push(
         `<image x="${x}" y="${y}" width="${w}" height="${h}" ` +
           `href="${escapeXml(normalizeDataUri(style.properties.image))}" preserveAspectRatio="xMidYMid meet"/>`,
+      );
+    } else if (isEllipse) {
+      const ellipse =
+        `<ellipse cx="${x + w / 2}" cy="${y + h / 2}" rx="${w / 2}" ry="${h / 2}" ` +
+        `fill="${fillRef}" stroke="${stroke}" stroke-width="${strokeWidth}" stroke-opacity="1"/>`;
+      nodeSvg.push(
+        glow === "filter" ? `<g filter="url(#softGlow)">${ellipse}</g>${ellipse}` : ellipse,
+      );
+    } else if (isRhombus) {
+      const points: Array<[number, number]> = [
+        [x + w / 2, y],
+        [x + w, y + h / 2],
+        [x + w / 2, y + h],
+        [x, y + h / 2],
+      ];
+      const rhombus =
+        `<polygon points="${polygonPoints(points)}" fill="${fillRef}" stroke="${stroke}" ` +
+        `stroke-width="${strokeWidth}" stroke-opacity="1"/>`;
+      nodeSvg.push(
+        glow === "filter" ? `<g filter="url(#softGlow)">${rhombus}</g>${rhombus}` : rhombus,
+      );
+    } else if (isHexagon) {
+      // Matches real draw.io's default hexagon inset (~25% of width for
+      // the slanted side cuts).
+      const inset = w * 0.25;
+      const points: Array<[number, number]> = [
+        [x + inset, y],
+        [x + w - inset, y],
+        [x + w, y + h / 2],
+        [x + w - inset, y + h],
+        [x + inset, y + h],
+        [x, y + h / 2],
+      ];
+      const hexagon =
+        `<polygon points="${polygonPoints(points)}" fill="${fillRef}" stroke="${stroke}" ` +
+        `stroke-width="${strokeWidth}" stroke-opacity="1"/>`;
+      nodeSvg.push(
+        glow === "filter" ? `<g filter="url(#softGlow)">${hexagon}</g>${hexagon}` : hexagon,
       );
     } else {
       const rect =
