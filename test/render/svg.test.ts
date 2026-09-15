@@ -82,6 +82,79 @@ describe("renderDrawioToSvg", () => {
     expect(svg).toContain(`font-family="Inter, ${FONT_FALLBACK_STACK}"`);
   });
 
+  it("translates a child node's parent-relative geometry into absolute page coordinates", () => {
+    const xml = drawio(
+      '<mxCell id="0"/><mxCell id="1" parent="0"/>' +
+        '<mxCell id="panel" value="Panel" style="container=1;" vertex="1" parent="1">' +
+        '<mxGeometry x="1330" y="20" width="200" height="200" as="geometry"/></mxCell>' +
+        '<mxCell id="child" value="Child" style="" vertex="1" parent="panel">' +
+        '<mxGeometry x="90" y="75" width="40" height="30" as="geometry"/></mxCell>',
+    );
+
+    const svg = renderDrawioToSvg(xml);
+
+    // Child geometry (90,75) is relative to its parent "panel" at
+    // (1330,20); the absolute page position must be (1420,95), not the
+    // raw (90,75) near the page origin.
+    expect(svg).toContain('<rect x="1420" y="95" width="40" height="30"');
+  });
+
+  it("nests parent-relative offsets across more than one level of container", () => {
+    const xml = drawio(
+      '<mxCell id="0"/><mxCell id="1" parent="0"/>' +
+        '<mxCell id="outer" style="container=1;" vertex="1" parent="1">' +
+        '<mxGeometry x="100" y="50" width="500" height="500" as="geometry"/></mxCell>' +
+        '<mxCell id="inner" style="container=1;" vertex="1" parent="outer">' +
+        '<mxGeometry x="10" y="10" width="300" height="300" as="geometry"/></mxCell>' +
+        '<mxCell id="leaf" style="" vertex="1" parent="inner">' +
+        '<mxGeometry x="5" y="5" width="20" height="20" as="geometry"/></mxCell>',
+    );
+
+    const svg = renderDrawioToSvg(xml);
+
+    // leaf absolute = outer(100,50) + inner(10,10) + leaf(5,5) = (115,65).
+    expect(svg).toContain('<rect x="115" y="65" width="20" height="20"');
+  });
+
+  it("auto-fits the canvas to the document's mxGraphModel pageWidth/pageHeight", () => {
+    const xml =
+      '<mxfile host="test"><diagram id="p1" name="Page-1">' +
+      '<mxGraphModel pageWidth="1600" pageHeight="900"><root>' +
+      '<mxCell id="0"/><mxCell id="1" parent="0"/>' +
+      '<mxCell id="n1" style="" vertex="1" parent="1">' +
+      '<mxGeometry x="0" y="0" width="10" height="10" as="geometry"/></mxCell>' +
+      "</root></mxGraphModel></diagram></mxfile>";
+
+    const svg = renderDrawioToSvg(xml);
+
+    expect(svg).toContain('width="1600" height="900" viewBox="0 0 1600 900"');
+  });
+
+  it("falls back to the content bounding box when pageWidth/pageHeight are absent", () => {
+    const xml = drawio(
+      '<mxCell id="0"/><mxCell id="1" parent="0"/>' +
+        '<mxCell id="n1" style="" vertex="1" parent="1">' +
+        '<mxGeometry x="900" y="400" width="100" height="50" as="geometry"/></mxCell>',
+    );
+
+    const svg = renderDrawioToSvg(xml);
+
+    // bbox right/bottom = (1000, 450) + 20px margin = (1020, 470).
+    expect(svg).toContain('width="1020" height="470" viewBox="0 0 1020 470"');
+  });
+
+  it("respects an explicit width/height override via viewBox scaling", () => {
+    const xml = drawio(
+      '<mxCell id="0"/><mxCell id="1" parent="0"/>' +
+        '<mxCell id="n1" style="" vertex="1" parent="1">' +
+        '<mxGeometry x="0" y="0" width="100" height="100" as="geometry"/></mxCell>',
+    );
+
+    const svg = renderDrawioToSvg(xml, { width: 400, height: 300 });
+
+    expect(svg).toContain('width="400" height="300" viewBox="0 0 120 120"');
+  });
+
   it("uses only the fallback stack when no fontFamily is set", () => {
     const xml = drawio(
       '<mxCell id="0"/><mxCell id="1" parent="0"/>' +

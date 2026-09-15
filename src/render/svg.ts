@@ -37,9 +37,17 @@ export interface RenderOptions {
   background?: string;
   /** Glow rendering mode (feGaussianBlur + gradients). Defaults to `"none"`. */
   glow?: GlowMode;
-  /** Canvas width in px. Defaults to 850. */
+  /**
+   * Canvas width in px. Defaults to 850 only when the document's
+   * `<mxGraphModel pageWidth>` is absent; otherwise the canvas auto-fits
+   * the diagram's real page size (see `renderDrawioToSvg`).
+   */
   width?: number;
-  /** Canvas height in px. Defaults to 700. */
+  /**
+   * Canvas height in px. Defaults to 700 only when the document's
+   * `<mxGraphModel pageHeight>` is absent; otherwise the canvas auto-fits
+   * the diagram's real page size (see `renderDrawioToSvg`).
+   */
   height?: number;
 }
 
@@ -119,7 +127,7 @@ function escapeXml(text: string): string {
  * content transparently).
  */
 export function renderDrawioToSvg(drawioXml: string, options: RenderOptions = {}): string {
-  const { background = "#ffffff", glow = "none", width = 850, height = 700 } = options;
+  const { background = "#ffffff", glow = "none" } = options;
 
   const doc = loadDrawioDocument(drawioXml);
   const pages = getPages(doc);
@@ -127,6 +135,11 @@ export function renderDrawioToSvg(drawioXml: string, options: RenderOptions = {}
   const modelDoc = new DOMParser().parseFromString(modelXml, "text/xml");
   const root = modelDoc.documentElement as unknown as XmlElement;
   const cells = childElements(root, "mxCell");
+  const cellById = new Map<string, XmlElement>();
+  for (const cell of cells) {
+    const id = cell.getAttribute("id");
+    if (id) cellById.set(id, cell);
+  }
 
   const defs: string[] = [
     '<marker id="arrow" markerWidth="10" markerHeight="10" refX="8" ' +
@@ -155,6 +168,34 @@ export function renderDrawioToSvg(drawioXml: string, options: RenderOptions = {}
     return gid;
   }
 
+  /**
+   * A child cell's `<mxGeometry x y>` is relative to its parent cell (e.g.
+   * a swimlane/container), not the page, in draw.io's format. Walk up the
+   * `parent` chain and accumulate each ancestor's own absolute offset so
+   * nested nodes land at their real page position instead of being drawn
+   * relative to the page origin (the "clubbed" bug: children of a
+   * container all stacking near (0,0)). Root cells "0"/"1" have no
+   * geometry and terminate the walk. A `Set` guards against a malformed
+   * file with a parent cycle.
+   */
+  const absoluteOffsetCache = new Map<string, { x: number; y: number }>();
+  function absoluteOffset(cellId: string, seen = new Set<string>()): { x: number; y: number } {
+    const cached = absoluteOffsetCache.get(cellId);
+    if (cached) return cached;
+    const cell = cellById.get(cellId);
+    const parentId = cell?.getAttribute("parent");
+    if (!cell || !parentId || seen.has(cellId)) return { x: 0, y: 0 };
+    seen.add(cellId);
+    const parentGeoNodes = childElements(cell, "mxGeometry");
+    const ownGeo = parentGeoNodes[0];
+    const parentBase = absoluteOffset(parentId, seen);
+    const offset = ownGeo
+      ? { x: parentBase.x + numAttr(ownGeo, "x"), y: parentBase.y + numAttr(ownGeo, "y") }
+      : parentBase;
+    absoluteOffsetCache.set(cellId, offset);
+    return offset;
+  }
+
   const nodeGeo = new Map<string, NodeGeometry>();
   for (const cell of cells) {
     if (cell.getAttribute("vertex") !== "1") continue;
@@ -162,9 +203,11 @@ export function renderDrawioToSvg(drawioXml: string, options: RenderOptions = {}
     const geoNodes = childElements(cell, "mxGeometry");
     const geo = geoNodes[0];
     if (!id || !geo) continue;
+    const parentId = cell.getAttribute("parent");
+    const parentOffset = parentId ? absoluteOffset(parentId) : { x: 0, y: 0 };
     nodeGeo.set(id, {
-      x: numAttr(geo, "x"),
-      y: numAttr(geo, "y"),
+      x: parentOffset.x + numAttr(geo, "x"),
+      y: parentOffset.y + numAttr(geo, "y"),
       w: numAttr(geo, "width"),
       h: numAttr(geo, "height"),
     });
@@ -259,9 +302,33 @@ export function renderDrawioToSvg(drawioXml: string, options: RenderOptions = {}
     });
   }
 
+  /**
+   * The renderer used to hard-code an 850x700 canvas regardless of the
+   * document's actual page size (the "squeezed" bug: a diagram authored on
+   * draw.io's default 1600x900+ canvas got clipped/squeezed into 850x700).
+   * Prefer the real `<mxGraphModel pageWidth/pageHeight>` attributes; if
+   * absent, fall back to the bounding box of every node's absolute
+   * geometry (with a small margin) so the canvas always fits the content;
+   * only fall back to the 850x700 default when neither is available.
+   */
+  const modelPageWidth = numAttr(root, "pageWidth", 0);
+  const modelPageHeight = numAttr(root, "pageHeight", 0);
+  let bboxRight = 0;
+  let bboxBottom = 0;
+  for (const geo of nodeGeo.values()) {
+    bboxRight = Math.max(bboxRight, geo.x + geo.w);
+    bboxBottom = Math.max(bboxBottom, geo.y + geo.h);
+  }
+  const margin = 20;
+  const diagramWidth = modelPageWidth || (bboxRight ? bboxRight + margin : 850);
+  const diagramHeight = modelPageHeight || (bboxBottom ? bboxBottom + margin : 700);
+  const width = options.width ?? diagramWidth;
+  const height = options.height ?? diagramHeight;
+
   const parts = [
-    `<svg xmlns="http://www.w3.org/2000/svg" width="${width}" height="${height}">`,
-    `<rect width="${width}" height="${height}" fill="${background}"/>`,
+    `<svg xmlns="http://www.w3.org/2000/svg" width="${width}" height="${height}" ` +
+      `viewBox="0 0 ${diagramWidth} ${diagramHeight}">`,
+    `<rect width="${diagramWidth}" height="${diagramHeight}" fill="${background}"/>`,
     `<defs>${defs.join("")}</defs>`,
     ...edgeSvg,
     ...nodeSvg,
