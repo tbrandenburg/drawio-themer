@@ -300,6 +300,15 @@ function renderPage(
     return offset;
   }
 
+  /**
+   * A vertex whose `parent` is an edge cell (a floating edge label, e.g.
+   * `relative="1"` geometry) can't be positioned in this pass: its
+   * geometry's `x` is a fractional position along the edge's resolved
+   * path (not a pixel offset), and that path depends on connection
+   * points/waypoints computed later. Defer these to `edgeLabelCells` and
+   * resolve them in a second pass, once `edgePathById` is known below.
+   */
+  const edgeLabelCells: XmlElement[] = [];
   const nodeGeo = new Map<string, NodeGeometry>();
   for (const cell of cells) {
     if (cell.getAttribute("vertex") !== "1") continue;
@@ -308,6 +317,11 @@ function renderPage(
     const geo = geoNodes[0];
     if (!id || !geo) continue;
     const parentId = cell.getAttribute("parent");
+    const parentCell = parentId ? cellById.get(parentId) : undefined;
+    if (parentCell?.getAttribute("edge") === "1") {
+      edgeLabelCells.push(cell);
+      continue;
+    }
     const parentOffset = parentId ? absoluteOffset(parentId) : { x: 0, y: 0 };
     nodeGeo.set(id, {
       x: parentOffset.x + numAttr(geo, "x"),
@@ -315,29 +329,6 @@ function renderPage(
       w: numAttr(geo, "width"),
       h: numAttr(geo, "height"),
     });
-  }
-
-  /**
-   * draw.io allows node geometry with negative x/y (content placed left of
-   * or above the page origin), but this renderer's canvas always starts
-   * at (0,0) with a hardcoded `viewBox="0 0 w h"` - anything at a
-   * negative coordinate got silently clipped off-canvas (issue #15).
-   * Rather than compute a negative-origin viewBox (which would also
-   * require shifting every marker/gradient/background rect), shift every
-   * node's absolute geometry so the leftmost/topmost content lands at 0,
-   * preserving all relative positions and topology.
-   */
-  let minX = 0;
-  let minY = 0;
-  for (const geo of nodeGeo.values()) {
-    minX = Math.min(minX, geo.x);
-    minY = Math.min(minY, geo.y);
-  }
-  if (minX < 0 || minY < 0) {
-    for (const geo of nodeGeo.values()) {
-      geo.x -= minX;
-      geo.y -= minY;
-    }
   }
 
   function center(id: string | null): [number, number] | null {
@@ -371,6 +362,173 @@ function renderPage(
     const cx = geo.x + geo.w / 2;
     const cy = geo.y + geo.h / 2;
     return clipToRect(cx, cy, otherX, otherY, geo.w, geo.h);
+  }
+
+  /**
+   * Resolves an edge cell's actual rendered path (source connection point,
+   * any explicit waypoints, target connection point), in the same way the
+   * edge-rendering loop below draws it. Extracted so it can also be used
+   * to position edge-label child cells (vertices whose `parent` is this
+   * edge) before those labels are added to `nodeGeo`.
+   */
+  function computeEdgePath(cell: XmlElement): Array<[number, number]> | null {
+    const style = parseStyle(cell.getAttribute("style") ?? "");
+    const src = cell.getAttribute("source");
+    const tgt = cell.getAttribute("target");
+    const c1 = center(src);
+    const c2 = center(tgt);
+    if (!c1 || !c2 || !src || !tgt) return null;
+    const sourceGeo = nodeGeo.get(src);
+    const targetGeo = nodeGeo.get(tgt);
+    if (!sourceGeo || !targetGeo) return null;
+
+    const edgeGeoNodes = childElements(cell, "mxGeometry");
+    const edgeGeo = edgeGeoNodes[0];
+    const waypoints: Array<[number, number]> = [];
+    if (edgeGeo) {
+      const arrays = childElements(edgeGeo, "Array");
+      const pointsArray = arrays.find((a) => a.getAttribute("as") === "points") ?? arrays[0];
+      if (pointsArray) {
+        for (const pt of childElements(pointsArray, "mxPoint")) {
+          waypoints.push([numAttr(pt, "x"), numAttr(pt, "y")]);
+        }
+      }
+    }
+
+    const towardFromSource = waypoints[0] ?? c2;
+    const towardFromTarget = waypoints[waypoints.length - 1] ?? c1;
+
+    const [p1x, p1y] = connectionPoint(
+      sourceGeo,
+      style.properties.exitX,
+      style.properties.exitY,
+      towardFromSource[0],
+      towardFromSource[1],
+    );
+    const [p2x, p2y] = connectionPoint(
+      targetGeo,
+      style.properties.entryX,
+      style.properties.entryY,
+      towardFromTarget[0],
+      towardFromTarget[1],
+    );
+    return [[p1x, p1y], ...waypoints, [p2x, p2y]];
+  }
+
+  const edgePathById = new Map<string, Array<[number, number]>>();
+  for (const cell of cells) {
+    if (cell.getAttribute("edge") !== "1") continue;
+    const id = cell.getAttribute("id");
+    if (!id) continue;
+    const path = computeEdgePath(cell);
+    if (path) edgePathById.set(id, path);
+  }
+
+  /**
+   * Interpolates a point at arc-length fraction `t` (`0` = path start, `1`
+   * = path end) along a polyline. Matches real draw.io's edge-label
+   * geometry convention: the label's fractional `x` (`[-1, 1]`, `0` =
+   * midpoint) maps to `t = (x + 1) / 2` along the edge's actual resolved
+   * path (including waypoints/fixed connection points), not a straight
+   * line between the two node centers.
+   */
+  function pointAlongPath(points: Array<[number, number]>, t: number): [number, number] {
+    if (points.length === 0) return [0, 0];
+    if (points.length === 1) return points[0]!;
+    const segmentLengths: number[] = [];
+    let total = 0;
+    for (let i = 1; i < points.length; i++) {
+      const [ax, ay] = points[i - 1]!;
+      const [bx, by] = points[i]!;
+      const length = Math.hypot(bx - ax, by - ay);
+      segmentLengths.push(length);
+      total += length;
+    }
+    const clampedT = Math.min(1, Math.max(0, t));
+    if (total === 0) return points[0]!;
+    let target = clampedT * total;
+    for (let i = 0; i < segmentLengths.length; i++) {
+      const length = segmentLengths[i]!;
+      if (target <= length || i === segmentLengths.length - 1) {
+        const ratio = length === 0 ? 0 : target / length;
+        const [ax, ay] = points[i]!;
+        const [bx, by] = points[i + 1]!;
+        return [ax + (bx - ax) * ratio, ay + (by - ay) * ratio];
+      }
+      target -= length;
+    }
+    return points[points.length - 1]!;
+  }
+
+  /**
+   * Second nodeGeo pass: floating edge labels (`relative="1"` vertex
+   * children of an edge cell) can only be positioned now that every
+   * edge's resolved path is known. Per draw.io's convention, the
+   * geometry's `x` (default 0) is a fractional position along the path
+   * in `[-1, 1]`, and a nested `<mxPoint as="offset">` (default `{0,0}`)
+   * is a pixel offset added after interpolation.
+   */
+  for (const cell of edgeLabelCells) {
+    const id = cell.getAttribute("id");
+    const parentId = cell.getAttribute("parent");
+    const geoNodes = childElements(cell, "mxGeometry");
+    const geo = geoNodes[0];
+    if (!id || !parentId || !geo) continue;
+    const path = edgePathById.get(parentId);
+    if (!path) continue;
+
+    const fraction = numAttr(geo, "x", 0);
+    const t = (fraction + 1) / 2;
+    const [px, py] = pointAlongPath(path, t);
+
+    const offsetNodes = childElements(geo, "mxPoint").filter(
+      (pt) => pt.getAttribute("as") === "offset",
+    );
+    const offset = offsetNodes[0];
+    const dx = offset ? numAttr(offset, "x", 0) : 0;
+    const dy = offset ? numAttr(offset, "y", 0) : 0;
+    const w = numAttr(geo, "width", 0);
+    const h = numAttr(geo, "height", 0);
+
+    nodeGeo.set(id, {
+      x: px + dx - w / 2,
+      y: py + dy - h / 2,
+      w,
+      h,
+    });
+  }
+
+  /**
+   * draw.io allows node geometry with negative x/y (content placed left of
+   * or above the page origin), but this renderer's canvas always starts
+   * at (0,0) with a hardcoded `viewBox="0 0 w h"` - anything at a
+   * negative coordinate got silently clipped off-canvas (issue #15).
+   * Rather than compute a negative-origin viewBox (which would also
+   * require shifting every marker/gradient/background rect), shift every
+   * node's absolute geometry so the leftmost/topmost content lands at 0,
+   * preserving all relative positions and topology.
+   */
+  let minX = 0;
+  let minY = 0;
+  for (const geo of nodeGeo.values()) {
+    minX = Math.min(minX, geo.x);
+    minY = Math.min(minY, geo.y);
+  }
+  if (minX < 0 || minY < 0) {
+    for (const geo of nodeGeo.values()) {
+      geo.x -= minX;
+      geo.y -= minY;
+    }
+    // edgePathById was built from the pre-shift nodeGeo; shift its points
+    // too so the edge-rendering loop below (which reuses this map instead
+    // of recomputing) draws in the same shifted coordinate space as the
+    // now-shifted nodes.
+    for (const [id, path] of edgePathById) {
+      edgePathById.set(
+        id,
+        path.map(([px, py]) => [px - minX, py - minY]),
+      );
+    }
   }
 
   /** Builds a `stroke-dasharray` attribute fragment for a dashed/dotted style, or "" when solid. */
@@ -419,50 +577,12 @@ function renderPage(
     const edgeId = cell.getAttribute("id");
     if (edgeId && isHidden(edgeId)) continue;
     const style = parseStyle(cell.getAttribute("style") ?? "");
-    const src = cell.getAttribute("source");
-    const tgt = cell.getAttribute("target");
-    const c1 = center(src);
-    const c2 = center(tgt);
-    if (!c1 || !c2 || !src || !tgt) continue;
-    const sourceGeo = nodeGeo.get(src);
-    const targetGeo = nodeGeo.get(tgt);
-    if (!sourceGeo || !targetGeo) continue;
+    const allPoints = edgeId ? edgePathById.get(edgeId) : undefined;
+    if (!allPoints) continue;
+    const [p1x, p1y] = allPoints[0]!;
+    const [p2x, p2y] = allPoints[allPoints.length - 1]!;
+    const waypoints = allPoints.slice(1, -1);
 
-    // Explicit waypoints (<mxGeometry relative="1"><Array as="points">)
-    // take priority over the node centers when computing the "toward"
-    // direction for the fixed/clipped connection points, so the line
-    // leaves/enters the node border pointing at the first/last waypoint
-    // rather than at the other node's unrelated center.
-    const edgeGeoNodes = childElements(cell, "mxGeometry");
-    const edgeGeo = edgeGeoNodes[0];
-    const waypoints: Array<[number, number]> = [];
-    if (edgeGeo) {
-      const arrays = childElements(edgeGeo, "Array");
-      const pointsArray = arrays.find((a) => a.getAttribute("as") === "points") ?? arrays[0];
-      if (pointsArray) {
-        for (const pt of childElements(pointsArray, "mxPoint")) {
-          waypoints.push([numAttr(pt, "x"), numAttr(pt, "y")]);
-        }
-      }
-    }
-
-    const towardFromSource = waypoints[0] ?? c2;
-    const towardFromTarget = waypoints[waypoints.length - 1] ?? c1;
-
-    const [p1x, p1y] = connectionPoint(
-      sourceGeo,
-      style.properties.exitX,
-      style.properties.exitY,
-      towardFromSource[0],
-      towardFromSource[1],
-    );
-    const [p2x, p2y] = connectionPoint(
-      targetGeo,
-      style.properties.entryX,
-      style.properties.entryY,
-      towardFromTarget[0],
-      towardFromTarget[1],
-    );
     const stroke = style.properties.strokeColor ?? "#000000";
     const strokeWidth = Number.parseFloat(style.properties.strokeWidth ?? "1");
     const dashArray = dashArrayAttr(style);
@@ -472,7 +592,6 @@ function renderPage(
     const markerAttrs =
       `${startMarker ? ` marker-start="url(#${startMarker})"` : ""}` +
       `${endMarker ? ` marker-end="url(#${endMarker})"` : ""}`;
-    const allPoints: Array<[number, number]> = [[p1x, p1y], ...waypoints, [p2x, p2y]];
     const shape =
       waypoints.length > 0
         ? `<polyline points="${polygonPoints(allPoints)}" fill="none" stroke="${stroke}" ` +
