@@ -568,6 +568,40 @@ describe("renderDrawioToSvg", () => {
     expect(Number(match?.[4])).toBe(50);
   });
 
+  it("routes an edgeStyle=orthogonalEdgeStyle edge with no explicit waypoints as a perpendicular polyline, not a diagonal line (issue #48)", () => {
+    const xml = drawio(
+      '<mxCell id="0"/><mxCell id="1" parent="0"/>' +
+        '<mxCell id="A" value="Source" style="rounded=0;whiteSpace=wrap;html=1;" ' +
+        'vertex="1" parent="1"><mxGeometry x="40" y="40" width="120" height="60" as="geometry"/></mxCell>' +
+        '<mxCell id="B" value="Target" style="rounded=0;whiteSpace=wrap;html=1;" ' +
+        'vertex="1" parent="1"><mxGeometry x="400" y="300" width="120" height="60" as="geometry"/></mxCell>' +
+        '<mxCell id="E1" style="edgeStyle=orthogonalEdgeStyle;rounded=1;orthogonalLoop=1;jettySize=auto;' +
+        'html=1;exitX=1;exitY=0.5;entryX=0;entryY=0.5;" edge="1" parent="1" source="A" target="B">' +
+        '<mxGeometry relative="1" as="geometry"/></mxCell>',
+    );
+
+    const svg = renderDrawioToSvg(xml);
+
+    expect(svg).not.toMatch(/<line x1="160\.0" y1="70\.0" x2="400\.0" y2="330\.0"/);
+    const match = svg.match(/<polyline points="([^"]+)"/);
+    expect(match).not.toBeNull();
+    const points = match![1]!
+      .trim()
+      .split(/\s+/)
+      .map((pair) => pair.split(",").map(Number) as [number, number]);
+    // Exit right of A (160,70), entry left of B (400,330): every
+    // segment between consecutive points must be purely horizontal or
+    // vertical (no diagonal segment).
+    expect(points[0]).toEqual([160, 70]);
+    expect(points[points.length - 1]).toEqual([400, 330]);
+    for (let i = 1; i < points.length; i++) {
+      const [ax, ay] = points[i - 1]!;
+      const [bx, by] = points[i]!;
+      const isHorizontalOrVertical = ax === bx || ay === by;
+      expect(isHorizontalOrVertical).toBe(true);
+    }
+  });
+
   it("rotates a horizontal=0 swimlane title -90deg along the left edge instead of centering it horizontally", () => {
     const xml = drawio(
       '<mxCell id="0"/><mxCell id="1" parent="0"/>' +

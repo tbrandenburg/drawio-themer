@@ -656,6 +656,91 @@ function renderPage(
     return clipToShape(geo.shape, cx, cy, otherX, otherY, geo.x, geo.y, geo.w, geo.h);
   }
 
+  /** The four cardinal sides a connection point can sit on, used by
+   * `orthogonalRoute` to decide whether an edge's first/last segment
+   * runs horizontally or vertically. */
+  type Side = "N" | "S" | "E" | "W";
+
+  /**
+   * Derives a cardinal `Side` from a fixed fractional connection point
+   * (`exitX/exitY` or `entryX/entryY`), matching draw.io's convention
+   * that one axis sits at an extreme (`0` or `1`) while the other is
+   * free (typically `0.5`). Returns `undefined` when the fractions are
+   * missing, unparseable, or don't clearly identify a side (e.g. a
+   * point on a corner), so callers can fall back to position-based
+   * inference.
+   */
+  function sideFromFraction(
+    fracX: string | undefined,
+    fracY: string | undefined,
+  ): Side | undefined {
+    if (fracX === undefined || fracY === undefined) return undefined;
+    const fx = Number.parseFloat(fracX);
+    const fy = Number.parseFloat(fracY);
+    if (Number.isNaN(fx) || Number.isNaN(fy)) return undefined;
+    if (fx <= 0.001) return "W";
+    if (fx >= 0.999) return "E";
+    if (fy <= 0.001) return "N";
+    if (fy >= 0.999) return "S";
+    return undefined;
+  }
+
+  /**
+   * Falls back to inferring a side from the relative position of two
+   * points (mirrors mxgraph's own fallback when no fixed connection
+   * point is set): picks the axis with the larger displacement and the
+   * side that direction points toward.
+   */
+  function inferSide(from: [number, number], to: [number, number]): Side {
+    const dx = to[0] - from[0];
+    const dy = to[1] - from[1];
+    if (Math.abs(dx) >= Math.abs(dy)) return dx >= 0 ? "E" : "W";
+    return dy >= 0 ? "S" : "N";
+  }
+
+  /**
+   * Bounded orthogonal (elbow) router used for
+   * `edgeStyle=orthogonalEdgeStyle`/`elbowEdgeStyle` edges that have no
+   * explicit waypoints (issue #48). Produces a 2-3 segment,
+   * horizontal/vertical-only path between `p1` and `p2`: a "Z" shape
+   * whose first segment leaves `p1` on `exitSide`'s axis (horizontal
+   * for E/W, vertical for N/S), through a midpoint, into `p2`. This is
+   * intentionally not a full port of mxgraph's `OrthConnector`
+   * (no obstacle avoidance, no jetty stubs) — see AGENTS.md's
+   * "structural fidelity limits" note.
+   */
+  function orthogonalRoute(
+    p1: [number, number],
+    exitSide: Side,
+    p2: [number, number],
+  ): Array<[number, number]> {
+    const [x1, y1] = p1;
+    const [x2, y2] = p2;
+    // Already axis-aligned: a single straight segment is already
+    // perpendicular/orthogonal, no elbow needed.
+    if (x1 === x2 || y1 === y2) return [p1, p2];
+    const points: Array<[number, number]> =
+      exitSide === "E" || exitSide === "W"
+        ? [
+            [x1, y1],
+            [(x1 + x2) / 2, y1],
+            [(x1 + x2) / 2, y2],
+            [x2, y2],
+          ]
+        : [
+            [x1, y1],
+            [x1, (y1 + y2) / 2],
+            [x2, (y1 + y2) / 2],
+            [x2, y2],
+          ];
+    // Drop consecutive duplicate points (e.g. when p1/p2 already share
+    // the midpoint's coordinate), which would otherwise render as
+    // zero-length segments.
+    return points.filter(
+      (pt, i) => i === 0 || pt[0] !== points[i - 1]![0] || pt[1] !== points[i - 1]![1],
+    );
+  }
+
   /**
    * Resolves an edge cell's actual rendered path (source connection point,
    * any explicit waypoints, target connection point), in the same way the
@@ -704,6 +789,15 @@ function renderPage(
       towardFromTarget[0],
       towardFromTarget[1],
     );
+
+    const edgeStyle = style.properties.edgeStyle;
+    const isOrthogonal = edgeStyle === "orthogonalEdgeStyle" || edgeStyle === "elbowEdgeStyle";
+    if (isOrthogonal && waypoints.length === 0) {
+      const exitSide =
+        sideFromFraction(style.properties.exitX, style.properties.exitY) ?? inferSide(c1, c2);
+      return orthogonalRoute([p1x, p1y], exitSide, [p2x, p2y]);
+    }
+
     return [[p1x, p1y], ...waypoints, [p2x, p2y]];
   }
 
