@@ -319,13 +319,23 @@ function wrapLabel(label: string, width: number, fontSize: string, bold = false)
       continue;
     }
 
-    const words = paragraph.split(" ");
+    // Tokenize each word further at internal hyphens (keeping the hyphen
+    // attached to the preceding fragment), so a single space-free
+    // hyphenated compound like "Human-On-The-Loop" still offers soft-wrap
+    // points, matching real draw.io's text layout (issue #41).
+    const tokens: { text: string; spaceBefore: boolean }[] = [];
+    for (const word of paragraph.split(" ")) {
+      const parts = word.split(/(?<=-)/);
+      parts.forEach((part, idx) => tokens.push({ text: part, spaceBefore: idx === 0 }));
+    }
+
     let current = "";
-    for (const word of words) {
-      const candidate = current ? `${current} ${word}` : word;
+    for (const token of tokens) {
+      const separator = token.spaceBefore && current ? " " : "";
+      const candidate = `${current}${separator}${token.text}`;
       if (estimateTextWidth(candidate, size, bold) > width && current) {
         wrapped.push(current);
-        current = word;
+        current = token.text;
       } else {
         current = candidate;
       }
@@ -379,6 +389,7 @@ function parseHtmlLabelLines(html: string): HtmlLabelLine[] {
   const rawLines = html
     .replace(/<br\s*\/?>/gi, "\u0000")
     .replace(/<\/(div|p|li)>/gi, "\u0000")
+    .replace(/\n/g, "\u0000")
     .split("\u0000");
 
   const lines: HtmlLabelLine[] = [];
