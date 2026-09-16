@@ -35,6 +35,13 @@ export const FONT_FALLBACK_STACK = "Noto Sans, Helvetica Neue, Arial, sans-serif
 // label lines at ~1.2x the cell's fontSize, not a fixed pixel constant
 // (issue #47).
 const LINE_HEIGHT_FACTOR = 1.2;
+// mxRectangleShape's RECTANGLE_ROUNDING_FACTOR: a plain rounded=1 rect
+// with no explicit arcSize defaults its corner radius to this fraction
+// of min(w,h) (issue #54).
+const RECTANGLE_ROUNDING_FACTOR = 0.15;
+// mxConstants.DEFAULT_FONTSIZE: draw.io's default font size for cells
+// with no explicit fontSize (issue #54).
+const DEFAULT_FONT_SIZE = "11";
 
 /** Whether to draw a soft glow behind nodes/edges using a real SVG `<filter>`. */
 export type GlowMode = "none" | "filter";
@@ -101,6 +108,14 @@ function numAttr(el: XmlElement, name: string, fallback = 0): number {
   if (value === null || value === "") return fallback;
   const parsed = Number.parseFloat(value);
   return Number.isNaN(parsed) ? fallback : parsed;
+}
+
+// mxgraph treats the literal style value "default" for color properties
+// (e.g. fontColor=default, strokeColor=default) as equivalent to the
+// property being absent entirely, not as a literal CSS color keyword
+// (issue #54) - resolve it to the same fallback used when unset.
+function resolveColor(value: string | undefined, fallback: string): string {
+  return value === undefined || value === "default" ? fallback : value;
 }
 
 function lighten(hexColor: string, amount = 14): string {
@@ -312,7 +327,7 @@ function estimateTextWidth(text: string, size: number, bold = false): number {
 }
 
 function wrapLabel(label: string, width: number, fontSize: string, bold = false): string[] {
-  const size = Number.parseFloat(fontSize) || 12;
+  const size = Number.parseFloat(fontSize) || 11;
 
   const wrapped: string[] = [];
   for (const paragraph of label.split("\n")) {
@@ -1000,7 +1015,7 @@ function renderPage(
     const [p2x, p2y] = allPoints[allPoints.length - 1]!;
     const waypoints = allPoints.slice(1, -1);
 
-    const stroke = style.properties.strokeColor ?? "#000000";
+    const stroke = resolveColor(style.properties.strokeColor, "#000000");
     const strokeWidth = Number.parseFloat(style.properties.strokeWidth ?? "1");
     const dashArray = dashArrayAttr(style);
     const { stroke: strokeOpacity } = opacities(style);
@@ -1086,11 +1101,22 @@ function renderPage(
     // a spurious visible fill+stroke box that never appears in the real UI.
     if (style.tokens.includes("group") && style.properties.container !== "1") continue;
     const fill = style.properties.fillColor ?? "#ffffff";
-    const stroke = style.properties.strokeColor ?? "#000000";
-    const fontColor = style.properties.fontColor ?? "#000000";
+    const stroke = resolveColor(style.properties.strokeColor, "#000000");
+    const fontColor = resolveColor(style.properties.fontColor, "#000000");
     const strokeWidth = Number.parseFloat(style.properties.strokeWidth ?? "1");
+    // A plain `rounded=1` rect with no explicit `arcSize` defaults to
+    // `RECTANGLE_ROUNDING_FACTOR * min(w,h)` in real draw.io
+    // (mxRectangleShape.js), not to a 0px arc (issue #54).
+    const hasArcSize = "arcSize" in style.properties;
     const arc = Number.parseFloat(style.properties.arcSize ?? "0");
-    const flatRx = Number.isNaN(arc) ? 0 : arc <= 100 ? (arc * Math.min(w, h)) / 100 : arc;
+    const flatRx =
+      !hasArcSize && style.properties.rounded === "1"
+        ? RECTANGLE_ROUNDING_FACTOR * Math.min(w, h)
+        : Number.isNaN(arc)
+          ? 0
+          : arc <= 100
+            ? (arc * Math.min(w, h)) / 100
+            : arc;
     // mxSwimlane computes its corner arc as a function of the title bar
     // height (`startSize`), not as a flat percentage of the box like a
     // plain rounded rect - see mxgraph's mxSwimlane.getSwimlaneArcSize()
@@ -1125,7 +1151,7 @@ function renderPage(
       /^,\s*/,
       "",
     );
-    const fontSize = style.properties.fontSize ?? "12";
+    const fontSize = style.properties.fontSize ?? DEFAULT_FONT_SIZE;
     const valign = style.properties.verticalAlign ?? "middle";
     const align = style.properties.align ?? "center";
     const spacingLeft = Number.parseFloat(style.properties.spacingLeft ?? "0") || 0;
@@ -1347,7 +1373,7 @@ function renderPage(
     // (rather than pinning the first line there and pushing later lines
     // further down), matching mxgraph's mxText.js block-centering for
     // verticalAlign=middle. Top-aligned labels grow downward as before.
-    const lineHeight = (Number.parseFloat(fontSize) || 12) * LINE_HEIGHT_FACTOR;
+    const lineHeight = (Number.parseFloat(fontSize) || 11) * LINE_HEIGHT_FACTOR;
     if (valign !== "top") {
       textY -= ((lines.length - 1) * lineHeight) / 2;
     }
