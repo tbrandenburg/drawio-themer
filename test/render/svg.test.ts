@@ -1397,3 +1397,63 @@ describe("renderDrawioToSvg gradientColor/gradientDirection", () => {
     expect(svg).toContain('font-size="11"');
   });
 });
+
+describe("label positioning and clipping (issue #55)", () => {
+  it("places a verticalLabelPosition=bottom label below the shape's box, not centered inside it", () => {
+    const defaultXml = drawio(
+      '<mxCell id="0"/><mxCell id="1" parent="0"/>' +
+        '<mxCell id="n1" value="Box" style="" ' +
+        'vertex="1" parent="1"><mxGeometry x="0" y="0" width="80" height="40" as="geometry"/></mxCell>',
+    );
+    const externalXml = drawio(
+      '<mxCell id="0"/><mxCell id="1" parent="0"/>' +
+        '<mxCell id="n1" value="Box" style="verticalLabelPosition=bottom;" ' +
+        'vertex="1" parent="1"><mxGeometry x="0" y="0" width="80" height="40" as="geometry"/></mxCell>',
+    );
+
+    const defaultY = Number(renderDrawioToSvg(defaultXml).match(/<text[^>]* y="([\d.-]+)"/)?.[1]);
+    const externalY = Number(renderDrawioToSvg(externalXml).match(/<text[^>]* y="([\d.-]+)"/)?.[1]);
+
+    // Box is y=0..40; a centered label's baseline sits inside that range,
+    // an external bottom label's baseline must sit below the box (> 40).
+    expect(defaultY).toBeLessThan(40);
+    expect(externalY).toBeGreaterThan(40);
+  });
+
+  it("places a labelPosition=right label to the right of the shape's box", () => {
+    const xml = drawio(
+      '<mxCell id="0"/><mxCell id="1" parent="0"/>' +
+        '<mxCell id="n1" value="Box" style="labelPosition=right;" ' +
+        'vertex="1" parent="1"><mxGeometry x="0" y="0" width="80" height="40" as="geometry"/></mxCell>',
+    );
+
+    const svg = renderDrawioToSvg(xml);
+    const textX = Number(svg.match(/<text[^>]* x="([\d.-]+)"/)?.[1]);
+
+    expect(textX).toBeGreaterThan(80);
+    expect(svg).toContain('text-anchor="start"');
+  });
+
+  it("truncates/clips a clipped=1 label instead of auto-wrapping it to more lines", () => {
+    const longLabel = "A very long label that would normally wrap onto several lines of text";
+    const wrappedXml = drawio(
+      `<mxCell id="0"/><mxCell id="1" parent="0"/>` +
+        `<mxCell id="n1" value="${longLabel}" style="whiteSpace=wrap;" ` +
+        'vertex="1" parent="1"><mxGeometry x="0" y="0" width="80" height="40" as="geometry"/></mxCell>',
+    );
+    const clippedXml = drawio(
+      `<mxCell id="0"/><mxCell id="1" parent="0"/>` +
+        `<mxCell id="n1" value="${longLabel}" style="whiteSpace=wrap;clipped=1;" ` +
+        'vertex="1" parent="1"><mxGeometry x="0" y="0" width="80" height="40" as="geometry"/></mxCell>',
+    );
+
+    const wrappedLineCount = [...renderDrawioToSvg(wrappedXml).matchAll(/<text[^>]*>/g)].length;
+    const clippedSvg = renderDrawioToSvg(clippedXml);
+    const clippedLineCount = [...clippedSvg.matchAll(/<text[^>]*>/g)].length;
+
+    expect(wrappedLineCount).toBeGreaterThan(1);
+    expect(clippedLineCount).toBe(1);
+    expect(clippedSvg).toContain("<clipPath");
+    expect(clippedSvg).toContain("clip-path=");
+  });
+});

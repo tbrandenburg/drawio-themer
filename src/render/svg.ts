@@ -42,6 +42,12 @@ const RECTANGLE_ROUNDING_FACTOR = 0.15;
 // mxConstants.DEFAULT_FONTSIZE: draw.io's default font size for cells
 // with no explicit fontSize (issue #54).
 const DEFAULT_FONT_SIZE = "11";
+// mxText's updateBoundingBox() moves the label's bounding box entirely
+// outside the shape's own geometry (not just re-aligned inside it) once
+// labelPosition/verticalLabelPosition is set to a non-default value;
+// this is the small gap left between the shape's edge and the label
+// (issue #55).
+const LABEL_POSITION_GAP = 4;
 
 /** Whether to draw a soft glow behind nodes/edges using a real SVG `<filter>`. */
 export type GlowMode = "none" | "filter";
@@ -1154,6 +1160,11 @@ function renderPage(
     const fontSize = style.properties.fontSize ?? DEFAULT_FONT_SIZE;
     const valign = style.properties.verticalAlign ?? "middle";
     const align = style.properties.align ?? "center";
+    // labelPosition/verticalLabelPosition place the label entirely outside
+    // the shape's own box (e.g. an icon with a caption below it) instead
+    // of aligning it inside, when set to a non-default value (issue #55).
+    const labelPosition = style.properties.labelPosition ?? "center";
+    const verticalLabelPosition = style.properties.verticalLabelPosition ?? "middle";
     const spacingLeft = Number.parseFloat(style.properties.spacingLeft ?? "0") || 0;
     // horizontal=0 marks a rotated (vertical) swimlane title, typically a
     // side panel; its label runs bottom-to-top along the left edge
@@ -1169,7 +1180,20 @@ function renderPage(
       (isBold ? ' font-weight="bold"' : "") +
       (isItalic ? ' font-style="italic"' : "") +
       (isUnderline ? ' text-decoration="underline"' : "");
-    let textY = valign === "top" ? y + 18 : y + h / 2 + 5;
+    const fontSizeNum = Number.parseFloat(fontSize) || 11;
+    let textY: number;
+    if (verticalLabelPosition === "bottom") {
+      // Below the shape: baseline of the first line sits just past the
+      // box's bottom edge plus the gap, growing downward (not centered
+      // inside the box like the default).
+      textY = y + h + LABEL_POSITION_GAP + fontSizeNum;
+    } else if (verticalLabelPosition === "top") {
+      // Above the shape: baseline of the last line sits just before the
+      // box's top edge minus the gap, growing upward.
+      textY = y - LABEL_POSITION_GAP;
+    } else {
+      textY = valign === "top" ? y + 18 : y + h / 2 + 5;
+    }
     const gradientColor = style.properties.gradientColor;
     const gradientDirection = style.properties.gradientDirection ?? "south";
     const fillRef = gradientColor
@@ -1341,7 +1365,18 @@ function renderPage(
       );
     }
 
-    const wrap = style.properties.whiteSpace === "wrap";
+    // clipped=1 tells real draw.io to crop overflowing text at the box
+    // boundary (DOM `overflow: hidden`) rather than reflow it into more
+    // wrapped lines - skip the auto-wrap path in that case and instead
+    // clip the rendered (unwrapped) label with an SVG clip-path below
+    // (issue #55).
+    const clipped = style.properties.clipped === "1";
+    const wrap = style.properties.whiteSpace === "wrap" && !clipped;
+    if (clipped && labelPosition === "center" && verticalLabelPosition === "middle") {
+      cellSvg.push(
+        `<clipPath id="clip-${id}"><rect x="${x}" y="${y}" width="${w}" height="${h}"/></clipPath>`,
+      );
+    }
     interface RenderLine {
       text: string;
       fontAttrs: string;
@@ -1373,8 +1408,12 @@ function renderPage(
     // (rather than pinning the first line there and pushing later lines
     // further down), matching mxgraph's mxText.js block-centering for
     // verticalAlign=middle. Top-aligned labels grow downward as before.
-    const lineHeight = (Number.parseFloat(fontSize) || 11) * LINE_HEIGHT_FACTOR;
-    if (valign !== "top") {
+    // An external verticalLabelPosition=top block grows upward instead,
+    // so its last (not first) line lands at the computed textY.
+    const lineHeight = fontSizeNum * LINE_HEIGHT_FACTOR;
+    if (verticalLabelPosition === "top") {
+      textY -= (lines.length - 1) * lineHeight;
+    } else if (verticalLabelPosition === "middle" && valign !== "top") {
       textY -= ((lines.length - 1) * lineHeight) / 2;
     }
 
@@ -1399,7 +1438,13 @@ function renderPage(
 
       let textX = x + w / 2;
       let textAnchor = "middle";
-      if (align === "left") {
+      if (labelPosition === "left") {
+        textX = x - LABEL_POSITION_GAP;
+        textAnchor = "end";
+      } else if (labelPosition === "right") {
+        textX = x + w + LABEL_POSITION_GAP;
+        textAnchor = "start";
+      } else if (align === "left") {
         textX = x + 4 + spacingLeft;
         textAnchor = "start";
       } else if (align === "right") {
@@ -1407,9 +1452,16 @@ function renderPage(
         textAnchor = "end";
       }
 
-      cellSvg.push(
+      const text =
         `<text x="${textX}" y="${textY + i * lineHeight}" text-anchor="${textAnchor}" ` +
-          `font-family="${fontFamily}" font-size="${fontSize}" fill="${fontColor}"${lineFontAttrs}>${escapeXml(line)}</text>`,
+        `font-family="${fontFamily}" font-size="${fontSize}" fill="${fontColor}"${lineFontAttrs}>${escapeXml(line)}</text>`;
+      // clipped=1 crops overflowing text at the box boundary rather than
+      // reflowing it (issue #55) - only meaningful when the label still
+      // sits inside the shape's own geometry (the default labelPosition).
+      cellSvg.push(
+        clipped && labelPosition === "center" && verticalLabelPosition === "middle"
+          ? `<g clip-path="url(#clip-${id})">${text}</g>`
+          : text,
       );
     });
 
