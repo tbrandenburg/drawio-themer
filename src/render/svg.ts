@@ -1115,6 +1115,13 @@ function renderPage(
       (isUnderline ? ' text-decoration="underline"' : "");
     let textY = valign === "top" ? y + 18 : y + h / 2 + 5;
     const fillRef = glow === "filter" ? `url(#${gradientFor(fill)})` : fill;
+    // mxgraph draws a drop shadow (offset ~2,3px, gray, low opacity) on any
+    // vertex whose style sets `shadow=1` (dark-neon-mode, monokai, dracula
+    // all set this) - wrap that cell's shape markup in the shared
+    // `dropShadow` SVG filter rather than touching fill/gradient resolution.
+    const hasShadow = style.properties.shadow === "1";
+    const withShadow = (svg: string): string =>
+      hasShadow ? `<g filter="url(#dropShadow)">${svg}</g>` : svg;
     const dashArray = dashArrayAttr(style);
     const { fill: fillOpacity, stroke: strokeOpacity } = opacities(style);
     // Collect this cell's shape + label markup separately so an optional
@@ -1134,7 +1141,9 @@ function renderPage(
         `L ${x + w},${y + eh} A ${w / 2},${eh} 0 0 0 ${x},${y + eh} Z"/>` +
         `<ellipse cx="${x + w / 2}" cy="${y + eh}" rx="${w / 2}" ry="${eh}"/>` +
         "</g>";
-      cellSvg.push(glow === "filter" ? `<g filter="url(#softGlow)">${cyl}</g>${cyl}` : cyl);
+      cellSvg.push(
+        withShadow(glow === "filter" ? `<g filter="url(#softGlow)">${cyl}</g>${cyl}` : cyl),
+      );
       textY = y + h / 2 + eh / 2;
     } else if (shape === "image" && style.properties.image) {
       // shape=image cells (e.g. embedded PNG icons via a data: URI) have
@@ -1151,7 +1160,9 @@ function renderPage(
         `fill="${fillRef}" fill-opacity="${fillOpacity}" stroke="${stroke}" ` +
         `stroke-width="${strokeWidth}" stroke-opacity="${strokeOpacity}"${dashArray}/>`;
       cellSvg.push(
-        glow === "filter" ? `<g filter="url(#softGlow)">${ellipse}</g>${ellipse}` : ellipse,
+        withShadow(
+          glow === "filter" ? `<g filter="url(#softGlow)">${ellipse}</g>${ellipse}` : ellipse,
+        ),
       );
     } else if (isRhombus) {
       const points = rhombusPoints(x, y, w, h);
@@ -1159,7 +1170,9 @@ function renderPage(
         `<polygon points="${polygonPoints(points)}" fill="${fillRef}" fill-opacity="${fillOpacity}" ` +
         `stroke="${stroke}" stroke-width="${strokeWidth}" stroke-opacity="${strokeOpacity}"${dashArray}/>`;
       cellSvg.push(
-        glow === "filter" ? `<g filter="url(#softGlow)">${rhombus}</g>${rhombus}` : rhombus,
+        withShadow(
+          glow === "filter" ? `<g filter="url(#softGlow)">${rhombus}</g>${rhombus}` : rhombus,
+        ),
       );
     } else if (isText) {
       // No box at all - real draw.io renders the "Text" shape as a bare
@@ -1172,7 +1185,9 @@ function renderPage(
         `<polygon points="${polygonPoints(points)}" fill="${fillRef}" fill-opacity="${fillOpacity}" ` +
         `stroke="${stroke}" stroke-width="${strokeWidth}" stroke-opacity="${strokeOpacity}"${dashArray}/>`;
       cellSvg.push(
-        glow === "filter" ? `<g filter="url(#softGlow)">${hexagon}</g>${hexagon}` : hexagon,
+        withShadow(
+          glow === "filter" ? `<g filter="url(#softGlow)">${hexagon}</g>${hexagon}` : hexagon,
+        ),
       );
     } else if (
       isContainer(cell) &&
@@ -1211,15 +1226,19 @@ function renderPage(
           `fill="${bodyFillRef}" fill-opacity="${fillOpacity}" stroke="${stroke}" ` +
           `stroke-width="${strokeWidth}" stroke-opacity="${strokeOpacity}"${dashArray}/>`;
       cellSvg.push(
-        glow === "filter" ? `<g filter="url(#softGlow)">${titleRect}</g>${titleRect}` : titleRect,
+        withShadow(
+          glow === "filter" ? `<g filter="url(#softGlow)">${titleRect}</g>${titleRect}` : titleRect,
+        ),
       );
-      cellSvg.push(bodyRect);
+      cellSvg.push(withShadow(bodyRect));
     } else {
       const rect =
         `<rect x="${x}" y="${y}" width="${w}" height="${h}" rx="${rx}" ` +
         `fill="${fillRef}" fill-opacity="${fillOpacity}" stroke="${stroke}" ` +
         `stroke-width="${strokeWidth}" stroke-opacity="${strokeOpacity}"${dashArray}/>`;
-      cellSvg.push(glow === "filter" ? `<g filter="url(#softGlow)">${rect}</g>${rect}` : rect);
+      cellSvg.push(
+        withShadow(glow === "filter" ? `<g filter="url(#softGlow)">${rect}</g>${rect}` : rect),
+      );
     }
 
     const wrap = style.properties.whiteSpace === "wrap";
@@ -1362,6 +1381,18 @@ export function renderDrawioToSvg(drawioXml: string, options: RenderOptions = {}
     '<marker id="ovalStart" markerWidth="8" markerHeight="8" refX="2" refY="4" ' +
       'orient="auto-start-reverse"><circle cx="4" cy="4" r="3.5" fill="#888"/></marker>',
   ];
+  // Matches real mxgraph's default vertex shadow (mxConstants.SHADOW_COLOR
+  // gray, ~2,3px offset) applied whenever a style sets `shadow=1` (issue
+  // #44), independent of the `glow` render option. Only emit the filter
+  // def when at least one cell actually uses it, matching the existing
+  // `<filter` no-op-by-default contract other tests assert on.
+  if (modelXmls.some((xml) => /style="[^"]*\bshadow=1\b/.test(xml))) {
+    defs.push(
+      '<filter id="dropShadow" x="-40%" y="-40%" width="180%" height="180%">' +
+        '<feDropShadow dx="2" dy="3" stdDeviation="2" flood-color="#000000" flood-opacity="0.4"/>' +
+        "</filter>",
+    );
+  }
   if (glow === "filter") {
     defs.push(
       '<filter id="softGlow" x="-60%" y="-60%" width="220%" height="220%">' +

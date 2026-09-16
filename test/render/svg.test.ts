@@ -1037,6 +1037,62 @@ describe("renderDrawioToSvg", () => {
     expect(textY).toBeLessThan(60);
   });
 
+  describe("shadow rendering (issue #44)", () => {
+    it("wraps a rect with the dropShadow filter when shadow=1", () => {
+      const xml = drawio(
+        '<mxCell id="0"/><mxCell id="1" parent="0"/>' +
+          '<mxCell id="n1" value="Start" style="fillColor=#dae8fc;strokeColor=#6c8ebf;shadow=1;" ' +
+          'vertex="1" parent="1"><mxGeometry x="10" y="20" width="100" height="50" as="geometry"/></mxCell>',
+      );
+
+      const svg = renderDrawioToSvg(xml);
+
+      expect(svg).toContain('<filter id="dropShadow"');
+      expect(svg).toMatch(
+        /<g filter="url\(#dropShadow\)"><rect x="10" y="20" width="100" height="50"/,
+      );
+    });
+
+    it("does not emit the dropShadow filter or wrapper when no cell sets shadow=1", () => {
+      const xml = drawio(
+        '<mxCell id="0"/><mxCell id="1" parent="0"/>' +
+          '<mxCell id="n1" value="Start" style="fillColor=#dae8fc;strokeColor=#6c8ebf;" ' +
+          'vertex="1" parent="1"><mxGeometry x="10" y="20" width="100" height="50" as="geometry"/></mxCell>',
+      );
+
+      const svg = renderDrawioToSvg(xml);
+
+      expect(svg).not.toContain("dropShadow");
+      expect(svg).not.toContain("<filter");
+    });
+
+    it("wraps a cylinder shape with the dropShadow filter when shadow=1", () => {
+      const xml = drawio(
+        '<mxCell id="0"/><mxCell id="1" parent="0"/>' +
+          '<mxCell id="db1" value="Orders DB" ' +
+          'style="shape=cylinder3;fillColor=#ffe6cc;strokeColor=#d79b00;shadow=1;" ' +
+          'vertex="1" parent="1"><mxGeometry x="0" y="0" width="80" height="100" as="geometry"/></mxCell>',
+      );
+
+      const svg = renderDrawioToSvg(xml);
+
+      expect(svg).toContain('<filter id="dropShadow"');
+      expect(svg).toMatch(/<g filter="url\(#dropShadow\)"><g stroke="#d79b00"/);
+    });
+
+    it("treats shadow=0 the same as no shadow property", () => {
+      const xml = drawio(
+        '<mxCell id="0"/><mxCell id="1" parent="0"/>' +
+          '<mxCell id="n1" value="Start" style="fillColor=#dae8fc;strokeColor=#6c8ebf;shadow=0;" ' +
+          'vertex="1" parent="1"><mxGeometry x="10" y="20" width="100" height="50" as="geometry"/></mxCell>',
+      );
+
+      const svg = renderDrawioToSvg(xml);
+
+      expect(svg).not.toContain("dropShadow");
+    });
+  });
+
   describe("fontStyle bitmask (issue #32)", () => {
     function labelSvg(fontStyle: string | undefined): string {
       const styleAttr = fontStyle === undefined ? "" : `fontStyle=${fontStyle};`;
