@@ -1,5 +1,10 @@
+import sharp from "sharp";
 import { describe, expect, it } from "vitest";
-import { renderDrawioToSvg, FONT_FALLBACK_STACK } from "../../src/render/svg.js";
+import {
+  convertWebpImagesToPng,
+  FONT_FALLBACK_STACK,
+  renderDrawioToSvg,
+} from "../../src/render/svg.js";
 
 function drawio(rootCells: string): string {
   return `<mxfile host="test"><diagram id="p1" name="Page-1"><mxGraphModel><root>${rootCells}</root></mxGraphModel></diagram></mxfile>`;
@@ -599,5 +604,81 @@ describe("renderDrawioToSvg", () => {
     expect(textX).toBeLessThan(250);
     expect(textY).toBeGreaterThan(20);
     expect(textY).toBeLessThan(60);
+  });
+});
+
+describe("convertWebpImagesToPng", () => {
+  async function makeWebpBase64(): Promise<string> {
+    const webpBuffer = await sharp({
+      create: { width: 2, height: 2, channels: 4, background: { r: 255, g: 0, b: 0, alpha: 1 } },
+    })
+      .webp()
+      .toBuffer();
+    return webpBuffer.toString("base64");
+  }
+
+  it("converts an embedded image/webp data URI (draw.io's no-base64-marker form) to image/png", async () => {
+    const webpBase64 = await makeWebpBase64();
+    const xml = drawio(
+      '<mxCell id="0"/><mxCell id="1" parent="0"/>' +
+        `<mxCell id="icon1" value="" style="shape=image;image=data:image/webp,${webpBase64};html=1;" ` +
+        'vertex="1" parent="1"><mxGeometry x="10" y="20" width="32" height="32" as="geometry"/></mxCell>',
+    );
+
+    const converted = await convertWebpImagesToPng(xml);
+
+    expect(converted).not.toContain("image/webp");
+    // draw.io's own storage convention omits the ";base64," marker
+    // (see normalizeDataUri's doc comment) - the converted value keeps
+    // that convention so it still parses correctly as a `;`-delimited
+    // style property.
+    const match = /data:image\/png,([A-Za-z0-9+/=]+)/.exec(converted);
+    expect(match).not.toBeNull();
+    const pngBuffer = Buffer.from(match?.[1] ?? "", "base64");
+    const metadata = await sharp(pngBuffer).metadata();
+    expect(metadata.format).toBe("png");
+    expect(metadata.width).toBe(2);
+    expect(metadata.height).toBe(2);
+
+    const svg = renderDrawioToSvg(converted);
+    expect(svg).toContain('href="data:image/png;base64,');
+  });
+
+  it("converts an embedded image/webp data URI in the RFC-compliant ;base64, form", async () => {
+    const webpBase64 = await makeWebpBase64();
+    const xml = drawio(
+      '<mxCell id="0"/><mxCell id="1" parent="0"/>' +
+        `<mxCell id="icon1" value="" style="shape=image;image=data:image/webp;base64,${webpBase64};html=1;" ` +
+        'vertex="1" parent="1"><mxGeometry x="10" y="20" width="32" height="32" as="geometry"/></mxCell>',
+    );
+
+    const converted = await convertWebpImagesToPng(xml);
+
+    expect(converted).not.toContain("image/webp");
+    expect(converted).toMatch(/data:image\/png,[A-Za-z0-9+/=]+/);
+  });
+
+  it("leaves the XML unchanged when there is no embedded webp image", async () => {
+    const xml = drawio(
+      '<mxCell id="0"/><mxCell id="1" parent="0"/>' +
+        '<mxCell id="n1" value="Start" style="fillColor=#dae8fc;" vertex="1" parent="1">' +
+        '<mxGeometry x="10" y="20" width="100" height="50" as="geometry"/></mxCell>',
+    );
+
+    const converted = await convertWebpImagesToPng(xml);
+
+    expect(converted).toBe(xml);
+  });
+
+  it("falls back to the original data URI when the payload is not decodable image data", async () => {
+    const xml = drawio(
+      '<mxCell id="0"/><mxCell id="1" parent="0"/>' +
+        '<mxCell id="icon1" value="" style="shape=image;image=data:image/webp,bm90LXJlYWxseS13ZWJw;html=1;" ' +
+        'vertex="1" parent="1"><mxGeometry x="0" y="0" width="32" height="32" as="geometry"/></mxCell>',
+    );
+
+    const converted = await convertWebpImagesToPng(xml);
+
+    expect(converted).toBe(xml);
   });
 });
