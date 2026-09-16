@@ -733,7 +733,21 @@ function renderPage(
     const fontColor = style.properties.fontColor ?? "#000000";
     const strokeWidth = Number.parseFloat(style.properties.strokeWidth ?? "1");
     const arc = Number.parseFloat(style.properties.arcSize ?? "0");
-    const rx = Number.isNaN(arc) ? 0 : arc <= 100 ? (arc * Math.min(w, h)) / 100 : arc;
+    const flatRx = Number.isNaN(arc) ? 0 : arc <= 100 ? (arc * Math.min(w, h)) / 100 : arc;
+    // mxSwimlane computes its corner arc as a function of the title bar
+    // height (`startSize`), not as a flat percentage of the box like a
+    // plain rounded rect - see mxgraph's mxSwimlane.getSwimlaneArcSize()
+    // (issue #39). Only applies when the cell is a swimlane/container AND
+    // has `rounded=1`; a swimlane without `rounded=1` keeps square corners.
+    const rx =
+      isContainer(cell) && style.properties.rounded === "1"
+        ? Math.min(
+            Math.min(w, h) / 2,
+            Number.parseFloat(style.properties.startSize ?? "40") *
+              (Number.parseFloat(style.properties.arcSize ?? "15") / 100) *
+              3,
+          )
+        : flatRx;
     const shape = style.properties.shape ?? "";
     const isEllipse = shape === "ellipse" || style.tokens.includes("ellipse");
     const isRhombus = shape === "rhombus" || style.tokens.includes("rhombus");

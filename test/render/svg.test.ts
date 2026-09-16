@@ -93,6 +93,44 @@ describe("renderDrawioToSvg", () => {
     expect(svg.indexOf("#fafafa")).toBeLessThan(svg.indexOf("#00ff00"));
   });
 
+  it("computes a swimlane container's corner arc from startSize using mxSwimlane's formula (issue #39)", () => {
+    const xml = drawio(
+      '<mxCell id="0"/><mxCell id="1" parent="0"/>' +
+        '<mxCell id="lane" value="Lane" style="swimlane;rounded=1;startSize=40;arcSize=15;" ' +
+        'vertex="1" parent="1"><mxGeometry x="0" y="0" width="200" height="100" as="geometry"/></mxCell>',
+    );
+
+    const svg = renderDrawioToSvg(xml);
+
+    // startSize(40) * (arcSize/100=0.15) * 3 = 18, well under min(w,h)/2=50.
+    expect(svg).toContain('rx="18"');
+  });
+
+  it("keeps the flat arc%*min(w,h) formula for a rounded=1 rect that is not a container/swimlane (issue #39)", () => {
+    const xml = drawio(
+      '<mxCell id="0"/><mxCell id="1" parent="0"/>' +
+        '<mxCell id="n1" value="Box" style="rounded=1;arcSize=15;" ' +
+        'vertex="1" parent="1"><mxGeometry x="0" y="0" width="200" height="100" as="geometry"/></mxCell>',
+    );
+
+    const svg = renderDrawioToSvg(xml);
+
+    // Flat formula: arc(15) * min(w,h)=100 / 100 = 15.
+    expect(svg).toContain('rx="15"');
+  });
+
+  it("keeps square corners for a swimlane container without rounded=1 (issue #39)", () => {
+    const xml = drawio(
+      '<mxCell id="0"/><mxCell id="1" parent="0"/>' +
+        '<mxCell id="lane" value="Lane" style="swimlane;startSize=40;" ' +
+        'vertex="1" parent="1"><mxGeometry x="0" y="0" width="200" height="100" as="geometry"/></mxCell>',
+    );
+
+    const svg = renderDrawioToSvg(xml);
+
+    expect(svg).toContain('rx="0"');
+  });
+
   it("appends the font fallback stack to whatever fontFamily the theme sets", () => {
     const xml = drawio(
       '<mxCell id="0"/><mxCell id="1" parent="0"/>' +
