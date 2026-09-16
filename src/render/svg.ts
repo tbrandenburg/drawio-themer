@@ -1089,6 +1089,7 @@ function renderPage(
   defs: string[],
   gradientIds: Map<string, string>,
   markerIds: Map<string, string>,
+  edgeGlowIds: Map<string, string>,
 ): { paintSvg: string[]; width: number; height: number; background?: string } {
   const modelDoc = new DOMParser().parseFromString(modelXml, "text/xml");
   const root = modelDoc.documentElement as unknown as XmlElement;
@@ -1617,6 +1618,47 @@ function renderPage(
   }
 
   /**
+   * Generates (or reuses) a `userSpaceOnUse` glow filter sized to a
+   * specific edge's own point extent, padded generously for the blur.
+   *
+   * Edges can be perfectly axis-aligned (a straight horizontal or
+   * vertical line), whose geometric bounding box has zero width or
+   * height. The shared `softGlow` filter used for nodes relies on the
+   * default `objectBoundingBox` filter units, which degenerates to an
+   * empty filter region for such zero-size boxes: lenient renderers
+   * like `resvg` still paint it, but spec-strict engines like headless
+   * Chromium clip it to nothing, silently dropping the edge (issue #71).
+   * A per-edge `userSpaceOnUse` region sidesteps that degenerate case
+   * without needing a single canvas-sized region shared by every glow
+   * user — the latter blows up (and can even panic) `resvg`'s filter
+   * rasterization, which allocates roughly `width x height` pixels for
+   * the filter's offscreen buffer.
+   */
+  function ensureEdgeGlowId(points: readonly [number, number][]): string {
+    const EDGE_GLOW_PAD = 40;
+    const xs = points.map(([x]) => x);
+    const ys = points.map(([, y]) => y);
+    const minX = Math.min(...xs) - EDGE_GLOW_PAD;
+    const minY = Math.min(...ys) - EDGE_GLOW_PAD;
+    const maxX = Math.max(...xs) + EDGE_GLOW_PAD;
+    const maxY = Math.max(...ys) + EDGE_GLOW_PAD;
+    const key = `${minX.toFixed(0)}|${minY.toFixed(0)}|${maxX.toFixed(0)}|${maxY.toFixed(0)}`;
+    const existing = edgeGlowIds.get(key);
+    if (existing) return existing;
+    const id = `edgeGlow${edgeGlowIds.size}`;
+    edgeGlowIds.set(key, id);
+    defs.push(
+      `<filter id="${id}" filterUnits="userSpaceOnUse" x="${minX.toFixed(0)}" ` +
+        `y="${minY.toFixed(0)}" width="${(maxX - minX).toFixed(0)}" ` +
+        `height="${(maxY - minY).toFixed(0)}">` +
+        '<feGaussianBlur in="SourceGraphic" stdDeviation="4" result="blur"/>' +
+        '<feMerge><feMergeNode in="blur"/><feMergeNode in="blur"/><feMergeNode in="SourceGraphic"/></feMerge>' +
+        "</filter>",
+    );
+    return id;
+  }
+
+  /**
    * Maps a draw.io `startArrow`/`endArrow` style value to the matching
    * marker id, generating a size-scaled def on demand, or `undefined`
    * when the edge explicitly has no arrowhead at that end (`none`).
@@ -1674,7 +1716,10 @@ function renderPage(
             `y2="${p2y.toFixed(1)}" stroke="${stroke}" stroke-width="${strokeWidth}" ` +
             `stroke-opacity="${strokeOpacity}"${dashArray}${markerAttrs}/>`;
     if (edgeId) {
-      svgById.set(edgeId, glow === "filter" ? `<g filter="url(#softGlow)">${shape}</g>` : shape);
+      svgById.set(
+        edgeId,
+        glow === "filter" ? `<g filter="url(#${ensureEdgeGlowId(allPoints)})">${shape}</g>` : shape,
+      );
     }
   }
 
@@ -2367,6 +2412,12 @@ export function renderDrawioToSvg(drawioXml: string, options: RenderOptions = {}
   }
   if (glow === "filter") {
     defs.push(
+      // Shared by nodes/vertices only (edges get their own per-edge,
+      // `userSpaceOnUse`-sized filter via `ensureEdgeGlowId`, see issue
+      // #71). Every node shape has a non-zero-size bounding box, so the
+      // default `objectBoundingBox` filter units here are safe: they
+      // never hit the degenerate empty-region case that axis-aligned
+      // edge lines can.
       '<filter id="softGlow" x="-60%" y="-60%" width="220%" height="220%">' +
         '<feGaussianBlur in="SourceGraphic" stdDeviation="4" result="blur"/>' +
         '<feMerge><feMergeNode in="blur"/><feMergeNode in="blur"/><feMergeNode in="SourceGraphic"/></feMerge>' +
@@ -2375,12 +2426,13 @@ export function renderDrawioToSvg(drawioXml: string, options: RenderOptions = {}
   }
   const gradientIds = new Map<string, string>();
   const markerIds = new Map<string, string>();
+  const edgeGlowIds = new Map<string, string>();
 
   let canvasWidth = 0;
   let yOffset = 0;
   const pageGroups: string[] = [];
   for (const modelXml of modelXmls) {
-    const page = renderPage(modelXml, glow, defs, gradientIds, markerIds);
+    const page = renderPage(modelXml, glow, defs, gradientIds, markerIds, edgeGlowIds);
     canvasWidth = Math.max(canvasWidth, page.width);
     const translate = yOffset === 0 ? "" : ` transform="translate(0,${yOffset})"`;
     // A page's own `pageColor` (issue #58, 7b) overrides the global
