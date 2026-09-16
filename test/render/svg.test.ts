@@ -76,6 +76,35 @@ describe("renderDrawioToSvg", () => {
     expect(x1).toBe(100);
   });
 
+  it("wraps an axis-aligned edge in a userSpaceOnUse glow filter (not the default objectBoundingBox) so it doesn't degenerate to an empty region under a glow theme (issue #71)", () => {
+    const xml = drawio(
+      '<mxCell id="0"/><mxCell id="1" parent="0"/>' +
+        '<mxCell id="n1" style="" vertex="1" parent="1"><mxGeometry x="0" y="0" width="100" height="100" as="geometry"/></mxCell>' +
+        '<mxCell id="n2" style="" vertex="1" parent="1"><mxGeometry x="0" y="300" width="100" height="100" as="geometry"/></mxCell>' +
+        '<mxCell id="e1" style="strokeColor=#000000;" edge="1" parent="1" source="n1" target="n2">' +
+        '<mxGeometry relative="1" as="geometry"/></mxCell>',
+    );
+
+    const svg = renderDrawioToSvg(xml, { glow: "filter" });
+
+    const lineMatch = svg.match(
+      /<g filter="url\(#(edgeGlow\d+)\)"><line[^>]*x1="([\d.]+)"[^>]*x2="([\d.]+)"/,
+    );
+    expect(lineMatch).not.toBeNull();
+    const [, filterId, x1, x2] = lineMatch!;
+    // The edge n1 -> n2 is perfectly vertical (both nodes share x=0..100,
+    // centered at x=50), so a naive objectBoundingBox filter region would
+    // degenerate to zero width and get clipped by spec-strict renderers.
+    expect(x1).toBe(x2);
+
+    const filterMatch = svg.match(new RegExp(`<filter id="${filterId}"([^>]*)>`));
+    expect(filterMatch).not.toBeNull();
+    const attrs = filterMatch?.[1] ?? "";
+    expect(attrs).toContain('filterUnits="userSpaceOnUse"');
+    expect(attrs).not.toMatch(/[xy]="-?\d+%"/);
+    expect(attrs).not.toMatch(/width="\d+%"/);
+  });
+
   it("draws containers before their children (z-order)", () => {
     const xml = drawio(
       '<mxCell id="0"/><mxCell id="1" parent="0"/>' +
