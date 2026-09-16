@@ -779,10 +779,12 @@ function renderPage(
    * The renderer used to hard-code an 850x700 canvas regardless of the
    * document's actual page size (the "squeezed" bug: a diagram authored on
    * draw.io's default 1600x900+ canvas got clipped/squeezed into 850x700).
-   * Prefer the real `<mxGraphModel pageWidth/pageHeight>` attributes; if
-   * absent, fall back to the bounding box of every node's absolute
-   * geometry (with a small margin) so the canvas always fits the content;
-   * only fall back to the 850x700 default when neither is available.
+   * Prefer the real `<mxGraphModel pageWidth/pageHeight>` attributes, but
+   * grow the canvas to fit the bounding box of every node's absolute
+   * geometry (with a small margin) when content overflows the declared
+   * page size — matching real draw.io's PNG export behavior. Only fall
+   * back to the 850x700 default when neither a declared page size nor
+   * any content is available.
    */
   const modelPageWidth = numAttr(root, "pageWidth", 0);
   const modelPageHeight = numAttr(root, "pageHeight", 0);
@@ -793,8 +795,8 @@ function renderPage(
     bboxBottom = Math.max(bboxBottom, geo.y + geo.h);
   }
   const margin = 20;
-  const diagramWidth = modelPageWidth || (bboxRight ? bboxRight + margin : 850);
-  const diagramHeight = modelPageHeight || (bboxBottom ? bboxBottom + margin : 700);
+  const diagramWidth = Math.max(modelPageWidth, bboxRight ? bboxRight + margin : 0) || 850;
+  const diagramHeight = Math.max(modelPageHeight, bboxBottom ? bboxBottom + margin : 0) || 700;
 
   return { nodeSvg, edgeSvg, width: diagramWidth, height: diagramHeight };
 }
