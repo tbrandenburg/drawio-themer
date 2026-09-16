@@ -335,30 +335,72 @@ function wrapLabel(label: string, width: number, fontSize: string, bold = false)
   return wrapped;
 }
 
-/**
- * A label with `html=1` in its style stores real (draw.io-editor-authored)
- * HTML markup as its `value` (e.g. `Line 1<br>Line 2`, `<div>...</div>`,
- * `&amp;`) rather than plain text - draw.io's own renderer feeds this
- * straight into a `foreignObject`/DOM node. This renderer has no HTML
- * layout engine, so instead: turn block-ish/line-break tags into `\n`
- * (consumed by the existing per-line label splitting), strip every other
- * tag, and decode the handful of entities draw.io commonly emits, so at
- * least the plain text content shows up instead of raw `<br>`/`&nbsp;`
- * (issue #17).
- */
-function htmlLabelToPlainText(html: string): string {
-  return html
-    .replace(/<br\s*\/?>/gi, "\n")
-    .replace(/<\/(div|p|li)>/gi, "\n")
-    .replace(/<[^>]+>/g, "")
+function decodeHtmlEntities(text: string): string {
+  return text
     .replace(/&nbsp;/g, " ")
     .replace(/&amp;/g, "&")
     .replace(/&lt;/g, "<")
     .replace(/&gt;/g, ">")
     .replace(/&quot;/g, '"')
-    .replace(/&#39;/g, "'")
-    .replace(/\n{2,}/g, "\n")
-    .trim();
+    .replace(/&#39;/g, "'");
+}
+
+/** One line of an `html=1` label, with an optional per-line bold/italic
+ * override relative to the cell's own `fontStyle` baseline (issue #38). */
+interface HtmlLabelLine {
+  text: string;
+  bold?: boolean;
+  italic?: boolean;
+}
+
+// Matches a line whose *entire* content is wrapped in a single
+// `<span style="...">...</span>` - the line-level-only scope this issue
+// asks for (partial-line/mid-line multi-run spans are explicitly out of
+// scope, see issue #38's "Proposed fix").
+const FULL_LINE_SPAN = /^<span\s+style="([^"]*)"\s*>([\s\S]*)<\/span>$/i;
+
+/**
+ * A label with `html=1` in its style stores real (draw.io-editor-authored)
+ * HTML markup as its `value` (e.g. `Line 1<br>Line 2`, `<div>...</div>`,
+ * `&amp;`) rather than plain text - draw.io's own renderer feeds this
+ * straight into a `foreignObject`/DOM node. This renderer has no HTML
+ * layout engine, so instead: split on block-ish/line-break tags, strip
+ * every other tag, and decode the handful of entities draw.io commonly
+ * emits, so at least the plain text content shows up instead of raw
+ * `<br>`/`&nbsp;` (issue #17).
+ *
+ * A line entirely wrapped in a single `<span style="font-weight: ...">`
+ * and/or `font-style: ...` (e.g. a regular-weight subtitle under a bold
+ * heading) overrides the cell-level bold/italic for that line only
+ * (issue #38) - the span tags themselves are stripped from the visible
+ * text.
+ */
+function parseHtmlLabelLines(html: string): HtmlLabelLine[] {
+  const rawLines = html
+    .replace(/<br\s*\/?>/gi, "\u0000")
+    .replace(/<\/(div|p|li)>/gi, "\u0000")
+    .split("\u0000");
+
+  const lines: HtmlLabelLine[] = [];
+  for (const raw of rawLines) {
+    const trimmed = raw.trim();
+    const spanMatch = FULL_LINE_SPAN.exec(trimmed);
+    let bold: boolean | undefined;
+    let italic: boolean | undefined;
+    const content = spanMatch ? (spanMatch[2] ?? "") : trimmed;
+    if (spanMatch) {
+      const spanStyle = spanMatch[1] ?? "";
+      const boldMatch = /font-weight\s*:\s*(normal|bold)/i.exec(spanStyle);
+      if (boldMatch) bold = (boldMatch[1] ?? "").toLowerCase() === "bold";
+      const italicMatch = /font-style\s*:\s*(normal|italic)/i.exec(spanStyle);
+      if (italicMatch) italic = (italicMatch[1] ?? "").toLowerCase() === "italic";
+    }
+
+    const text = decodeHtmlEntities(content.replace(/<[^>]+>/g, "")).trim();
+    if (text === "" && rawLines.length > 1) continue;
+    lines.push({ text, bold, italic });
+  }
+  return lines.length > 0 ? lines : [{ text: "" }];
 }
 
 /**
@@ -939,7 +981,6 @@ function renderPage(
         style.properties.strokeColor === "none");
     const label = cell.getAttribute("value") ?? "";
     const isHtmlLabel = style.properties.html === "1";
-    const plainLabel = isHtmlLabel ? htmlLabelToPlainText(label) : label;
     const fontFamily = `${style.properties.fontFamily ?? ""}, ${FONT_FALLBACK_STACK}`.replace(
       /^,\s*/,
       "",
@@ -1029,8 +1070,33 @@ function renderPage(
     }
 
     const wrap = style.properties.whiteSpace === "wrap";
-    const lines = wrap ? wrapLabel(plainLabel, w, fontSize, isBold) : plainLabel.split("\n");
-    lines.forEach((line, i) => {
+    interface RenderLine {
+      text: string;
+      fontAttrs: string;
+    }
+    const buildFontAttrs = (bold: boolean, italic: boolean): string =>
+      (bold ? ' font-weight="bold"' : "") +
+      (italic ? ' font-style="italic"' : "") +
+      (isUnderline ? ' text-decoration="underline"' : "");
+    let lines: RenderLine[];
+    if (isHtmlLabel) {
+      // Each HTML line may carry its own bold/italic override from a
+      // full-line-wrapping `<span style="...">` (issue #38); re-wrap each
+      // source line independently (rather than the whole flattened label
+      // at once) so that override still applies to any width-driven
+      // re-wrap of that line.
+      lines = parseHtmlLabelLines(label).flatMap((htmlLine) => {
+        const bold = htmlLine.bold ?? isBold;
+        const italic = htmlLine.italic ?? isItalic;
+        const fontAttrs = buildFontAttrs(bold, italic);
+        const wrapped = wrap ? wrapLabel(htmlLine.text, w, fontSize, bold) : [htmlLine.text];
+        return wrapped.map((text) => ({ text, fontAttrs }));
+      });
+    } else {
+      const wrapped = wrap ? wrapLabel(label, w, fontSize, isBold) : label.split("\n");
+      lines = wrapped.map((text) => ({ text, fontAttrs }));
+    }
+    lines.forEach(({ text: line, fontAttrs: lineFontAttrs }, i) => {
       if (rotatedLabel) {
         // Rotate about the label's own anchor point so it reads
         // bottom-to-top along the left edge, matching draw.io's
@@ -1043,7 +1109,7 @@ function renderPage(
         const py = y + h / 2;
         cellSvg.push(
           `<text x="${px.toFixed(1)}" y="${py.toFixed(1)}" text-anchor="middle" ` +
-            `font-family="${fontFamily}" font-size="${fontSize}" fill="${fontColor}"${fontAttrs} ` +
+            `font-family="${fontFamily}" font-size="${fontSize}" fill="${fontColor}"${lineFontAttrs} ` +
             `transform="rotate(-90 ${px.toFixed(1)} ${py.toFixed(1)})">${escapeXml(line)}</text>`,
         );
         return;
@@ -1061,7 +1127,7 @@ function renderPage(
 
       cellSvg.push(
         `<text x="${textX}" y="${textY + i * 14}" text-anchor="${textAnchor}" ` +
-          `font-family="${fontFamily}" font-size="${fontSize}" fill="${fontColor}"${fontAttrs}>${escapeXml(line)}</text>`,
+          `font-family="${fontFamily}" font-size="${fontSize}" fill="${fontColor}"${lineFontAttrs}>${escapeXml(line)}</text>`,
       );
     });
 

@@ -804,6 +804,24 @@ describe("renderDrawioToSvg", () => {
     expect(svg).not.toContain("&lt;b&gt;");
   });
 
+  it('honors a line-level <span style="font-weight: normal"> override within a bold-fontStyle html=1 label (issue #38)', () => {
+    const xml = drawio(
+      '<mxCell id="0"/><mxCell id="1" parent="0"/>' +
+        '<mxCell id="n1" value="1 Experience Layer&lt;br&gt;&lt;span style=&quot;font-weight: normal;&quot;&gt;' +
+        'Natural and flexible ways to work&lt;/span&gt;" style="html=1;fontStyle=1;" vertex="1" parent="1">' +
+        '<mxGeometry x="0" y="0" width="200" height="60" as="geometry"/></mxCell>',
+    );
+
+    const svg = renderDrawioToSvg(xml);
+    const textElements = [...svg.matchAll(/<text[^>]*>([^<]*)<\/text>/g)];
+
+    expect(textElements).toHaveLength(2);
+    expect(textElements[0]?.[0]).toContain('font-weight="bold"');
+    expect(textElements[0]?.[1]).toBe("1 Experience Layer");
+    expect(textElements[1]?.[0]).not.toContain('font-weight="bold"');
+    expect(textElements[1]?.[1]).toBe("Natural and flexible ways to work");
+  });
+
   it("positions an edge-label child cell along the edge's real path instead of at (0,0) (issue #14)", () => {
     const xml = drawio(
       '<mxCell id="0"/><mxCell id="1" parent="0"/>' +
