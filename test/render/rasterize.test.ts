@@ -6,6 +6,14 @@ const SIMPLE_SVG =
   '<svg xmlns="http://www.w3.org/2000/svg" width="10" height="10">' +
   '<rect width="10" height="10" fill="#ff0000"/></svg>';
 
+/** Reads width/height from a PNG buffer's IHDR chunk (bytes 16-23). */
+function readPngDimensions(png: Buffer): { width: number; height: number } {
+  return {
+    width: png.readUInt32BE(16),
+    height: png.readUInt32BE(20),
+  };
+}
+
 describe("rasterizeSvgToPng", () => {
   it("produces a buffer with valid PNG magic bytes", () => {
     const png = rasterizeSvgToPng(SIMPLE_SVG);
@@ -46,5 +54,32 @@ describe("rasterizeSvgToPng", () => {
     // A real "Test" glyph run at font-size 24 covers well over 50px;
     // an empty/failed render would leave this at 0.
     expect(nonWhitePixels).toBeGreaterThan(50);
+  });
+
+  it("defaults to a 2x render of the SVG's intrinsic pixel dimensions (issue #23)", () => {
+    const intrinsic = new Resvg(SIMPLE_SVG);
+    const rendered = rasterizeSvgToPng(SIMPLE_SVG);
+
+    const { width, height } = readPngDimensions(rendered);
+    expect(width).toBe(intrinsic.width * 2);
+    expect(height).toBe(intrinsic.height * 2);
+  });
+
+  it("honors a custom scale factor", () => {
+    const intrinsic = new Resvg(SIMPLE_SVG);
+    const rendered = rasterizeSvgToPng(SIMPLE_SVG, { scale: 3 });
+
+    const { width, height } = readPngDimensions(rendered);
+    expect(width).toBe(intrinsic.width * 3);
+    expect(height).toBe(intrinsic.height * 3);
+  });
+
+  it("scale: 1 matches the SVG's intrinsic pixel dimensions", () => {
+    const intrinsic = new Resvg(SIMPLE_SVG);
+    const rendered = rasterizeSvgToPng(SIMPLE_SVG, { scale: 1 });
+
+    const { width, height } = readPngDimensions(rendered);
+    expect(width).toBe(intrinsic.width);
+    expect(height).toBe(intrinsic.height);
   });
 });

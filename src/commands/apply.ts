@@ -103,10 +103,11 @@ async function renderDrawioToPng(
   drawioXml: string,
   outputPath: string,
   options?: RenderOptions,
+  scale?: number,
 ): Promise<void> {
   const converted = await convertWebpImagesToPng(drawioXml);
   const svg = renderDrawioToSvg(converted, options);
-  const png = rasterizeSvgToPng(svg);
+  const png = rasterizeSvgToPng(svg, { scale });
   await writeRenderOutput("PNG", outputPath, png);
 }
 
@@ -151,14 +152,19 @@ export async function applyCommand(input: string, options: ApplyOptions): Promis
   });
 
   if (options.pngOriginal) {
-    await renderDrawioToPng(contents, options.pngOriginal);
+    await renderDrawioToPng(contents, options.pngOriginal, undefined, options.pngScale);
   }
   if (options.pngThemed) {
     const background = themeInput.tokens.background;
-    await renderDrawioToPng(outputXml, options.pngThemed, {
-      background: background !== undefined ? String(background) : undefined,
-      glow: themeInput.glow ? "filter" : "none",
-    });
+    await renderDrawioToPng(
+      outputXml,
+      options.pngThemed,
+      {
+        background: background !== undefined ? String(background) : undefined,
+        glow: themeInput.glow ? "filter" : "none",
+      },
+      options.pngScale,
+    );
   }
 
   if (options.svgOriginal) {
