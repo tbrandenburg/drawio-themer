@@ -139,6 +139,30 @@ describe("renderDrawioToSvg", () => {
     expect(svg).toContain('x="15"');
   });
 
+  it("paints an edge declared after a container on top of that container's fill instead of behind it (issue #60)", () => {
+    const xml = drawio(
+      '<mxCell id="0"/><mxCell id="1" parent="0"/>' +
+        '<mxCell id="box" value="Box" style="rounded=1;fillColor=#fafafa;container=1;" ' +
+        'vertex="1" parent="1"><mxGeometry x="0" y="0" width="200" height="200" as="geometry"/></mxCell>' +
+        '<mxCell id="a" style="fillColor=#eeeeee;" vertex="1" parent="1">' +
+        '<mxGeometry x="10" y="10" width="20" height="20" as="geometry"/></mxCell>' +
+        '<mxCell id="b" style="fillColor=#eeeeee;" vertex="1" parent="1">' +
+        '<mxGeometry x="150" y="150" width="20" height="20" as="geometry"/></mxCell>' +
+        // Declared last, after the container, in document order - matching
+        // how real draw.io exports place edges after all vertex cells.
+        '<mxCell id="e1" style="edgeStyle=none;strokeColor=#ff00ff;" edge="1" parent="1" ' +
+        'source="a" target="b"><mxGeometry relative="1" as="geometry"/></mxCell>',
+    );
+
+    const svg = renderDrawioToSvg(xml);
+
+    // The container's own fill/rect must paint first so the edge (which
+    // crosses over the container's interior) renders on top of it instead
+    // of being hidden behind it - matching real draw.io's document-order
+    // (not "all edges behind all nodes") paint order.
+    expect(svg.indexOf("#fafafa")).toBeLessThan(svg.indexOf("#ff00ff"));
+  });
+
   it("computes a swimlane container's corner arc from startSize using mxSwimlane's formula (issue #39)", () => {
     const xml = drawio(
       '<mxCell id="0"/><mxCell id="1" parent="0"/>' +
