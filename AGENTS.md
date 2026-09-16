@@ -188,12 +188,12 @@ server, manual per-image navigate/screenshot calls):
 - 2026-09-16: Pitfall: A 7-issue "parallel subagent" plan collapsed to a
   single-file (`svg.ts`, one 930-line function) target, so true
   concurrent worktrees would have conflicted; also `gh pr edit --body
-  "$(cat ...)"` and `gh api -f body=@file` both silently failed to
+"$(cat ...)"` and `gh api -f body=@file` both silently failed to
   substitute file content (literal `@path` string landed in the PR body)
   after a `gh`-internal "Projects (classic)" GraphQL error masked the
   real failure. Prevention: before planning parallel subagents, grep how
   concentrated the target logic is and default to sequential
   worktree→merge→next if it's one dominant file; for PR/issue body
   updates, verify the body actually changed via a follow-up `gh pr view
-  --json body` read, and use `jq -Rs '{body:.}' | gh api ... --input -`
+--json body` read, and use `jq -Rs '{body:.}' | gh api ... --input -`
   instead of `-f body=@file`.
