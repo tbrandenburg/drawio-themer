@@ -414,6 +414,22 @@ describe("renderDrawioToSvg", () => {
     expect(textCount).toBe(2);
   });
 
+  it("wraps a bold label whose regular-weight-estimated width sits just under the wrap threshold (issue #37)", () => {
+    const xml = drawio(
+      '<mxCell id="0"/><mxCell id="1" parent="0"/>' +
+        '<mxCell id="n1" value="Domains &amp;amp; Edge" ' +
+        'style="rounded=1;whiteSpace=wrap;html=1;fillColor=#ffffff;strokeColor=#e4e4e7;' +
+        "fontStyle=1;fontFamily=Helvetica;fontSize=14;strokeWidth=1;fontColor=#18181b;" +
+        'arcSize=12;shadow=0;" vertex="1" parent="1">' +
+        '<mxGeometry x="0" y="0" width="100" height="70" as="geometry"/></mxCell>',
+    );
+
+    const svg = renderDrawioToSvg(xml);
+
+    const textCount = (svg.match(/<text /g) ?? []).length;
+    expect(textCount).toBeGreaterThan(1);
+  });
+
   it("does not wrap a label when whiteSpace=wrap is absent, even if it overflows", () => {
     const xml = drawio(
       '<mxCell id="0"/><mxCell id="1" parent="0"/>' +
