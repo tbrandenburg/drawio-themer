@@ -1008,6 +1008,80 @@ describe("renderDrawioToSvg", () => {
     expect(svg).toContain('marker-start="url(#arrowStart)"');
   });
 
+  function edgeSvgWithArrow(endArrow: string, extra = "") {
+    const xml = drawio(
+      '<mxCell id="0"/><mxCell id="1" parent="0"/>' +
+        '<mxCell id="n1" style="" vertex="1" parent="1"><mxGeometry x="0" y="0" width="50" height="50" as="geometry"/></mxCell>' +
+        '<mxCell id="n2" style="" vertex="1" parent="1"><mxGeometry x="200" y="0" width="50" height="50" as="geometry"/></mxCell>' +
+        `<mxCell id="e1" style="endArrow=${endArrow};${extra}" edge="1" parent="1" source="n1" target="n2">` +
+        '<mxGeometry relative="1" as="geometry"/></mxCell>',
+    );
+    return renderDrawioToSvg(xml);
+  }
+
+  it.each([
+    ["classicThin", /<path d="M0\.00,1\.50 L0\.00,4\.50 L9\.00,3\.00 Z"/],
+    ["block", /<path d="M0\.00,0\.00 L9\.00,3\.00 L0\.00,6\.00 L2\.50,3\.00 Z"/],
+    ["blockThin", /<path d="M0\.00,1\.50 L9\.00,3\.00 L0\.00,4\.50 L2\.00,3\.00 Z"/],
+    ["open", /<path d="M0\.00,0\.00 L9\.00,3\.00 L0\.00,6\.00" fill="none"/],
+    ["openThin", /<path d="M0\.00,1\.00 L9\.00,3\.00 L0\.00,5\.00" fill="none"/],
+    ["async", /<path d="M0\.00,3\.00 L9\.00,0\.00 L9\.00,3\.00 Z"/],
+    ["cross", /<path d="M0,0 L8\.00,8\.00 M0,8\.00 L8\.00,0"/],
+  ])(
+    "supports the %s marker as a distinct, referenced <marker> def (issue #53, 2c)",
+    (name, pathRe) => {
+      const svg = edgeSvgWithArrow(name);
+      expect(svg).toMatch(pathRe);
+      const idMatch = svg.match(/marker-end="url\(#(\w+)\)"/);
+      expect(idMatch).not.toBeNull();
+      const id = idMatch![1];
+      expect(svg).toContain(`<marker id="${id}"`);
+    },
+  );
+
+  it("falls back to the default classic arrow for an unrecognized endArrow value", () => {
+    const svg = edgeSvgWithArrow("totallyUnknownMarkerType");
+    expect(svg).toContain('marker-end="url(#arrow)"');
+  });
+
+  it("scales the arrowhead marker size up for a thicker-stroke edge (issue #53, 2d)", () => {
+    const xml = drawio(
+      '<mxCell id="0"/><mxCell id="1" parent="0"/>' +
+        '<mxCell id="n1" style="" vertex="1" parent="1"><mxGeometry x="0" y="0" width="50" height="50" as="geometry"/></mxCell>' +
+        '<mxCell id="n2" style="" vertex="1" parent="1"><mxGeometry x="200" y="0" width="50" height="50" as="geometry"/></mxCell>' +
+        '<mxCell id="n3" style="" vertex="1" parent="1"><mxGeometry x="0" y="100" width="50" height="50" as="geometry"/></mxCell>' +
+        '<mxCell id="n4" style="" vertex="1" parent="1"><mxGeometry x="200" y="100" width="50" height="50" as="geometry"/></mxCell>' +
+        '<mxCell id="e1" style="endArrow=block;strokeWidth=1;" edge="1" parent="1" source="n1" target="n2">' +
+        '<mxGeometry relative="1" as="geometry"/></mxCell>' +
+        '<mxCell id="e2" style="endArrow=block;strokeWidth=4;" edge="1" parent="1" source="n3" target="n4">' +
+        '<mxGeometry relative="1" as="geometry"/></mxCell>',
+    );
+    const svg = renderDrawioToSvg(xml);
+
+    const ids = [...svg.matchAll(/marker-end="url\(#(\w+)\)"/g)].map((m) => m[1]);
+    expect(ids).toHaveLength(2);
+    expect(ids[0]).not.toBe(ids[1]);
+
+    const widthOf = (id: string) =>
+      Number.parseFloat(
+        svg.match(new RegExp(`<marker id="${id}"[^>]*>`))![0].match(/markerWidth="([\d.]+)"/)![1],
+      );
+    expect(widthOf(ids[1]!)).toBeGreaterThan(widthOf(ids[0]!));
+  });
+
+  it("scales the arrowhead marker size via the endSize style property", () => {
+    const base = edgeSvgWithArrow("block", "strokeWidth=1;");
+    const bigger = edgeSvgWithArrow("block", "strokeWidth=1;endSize=12;");
+
+    const baseId = base.match(/marker-end="url\(#(\w+)\)"/)![1];
+    const biggerId = bigger.match(/marker-end="url\(#(\w+)\)"/)![1];
+    const baseDef = base.match(new RegExp(`<marker id="${baseId}"[^>]*>`))![0];
+    const biggerDef = bigger.match(new RegExp(`<marker id="${biggerId}"[^>]*>`))![0];
+    const baseWidth = Number.parseFloat(baseDef.match(/markerWidth="([\d.]+)"/)![1]);
+    const biggerWidth = Number.parseFloat(biggerDef.match(/markerWidth="([\d.]+)"/)![1]);
+    expect(biggerWidth).toBeGreaterThan(baseWidth);
+  });
+
   it("does not render a cell with visible=0", () => {
     const xml = drawio(
       '<mxCell id="0"/><mxCell id="1" parent="0"/>' +
