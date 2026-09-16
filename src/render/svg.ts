@@ -757,7 +757,16 @@ function renderPage(
     // side panel; its label runs bottom-to-top along the left edge
     // instead of sitting horizontally centered like a normal node/container.
     const rotatedLabel = style.properties.horizontal === "0";
-    const bold = style.properties.fontStyle === "1" ? 'font-weight="bold"' : "";
+    // draw.io's fontStyle is a bitmask (1=bold, 2=italic, 4=underline,
+    // freely combinable, e.g. 3=bold+italic) - not an exact-match enum.
+    const fontStyleBits = Number.parseInt(style.properties.fontStyle ?? "0", 10) || 0;
+    const isBold = (fontStyleBits & 1) !== 0;
+    const isItalic = (fontStyleBits & 2) !== 0;
+    const isUnderline = (fontStyleBits & 4) !== 0;
+    const fontAttrs =
+      (isBold ? ' font-weight="bold"' : "") +
+      (isItalic ? ' font-style="italic"' : "") +
+      (isUnderline ? ' text-decoration="underline"' : "");
     let textY = valign === "top" ? y + 18 : y + h / 2 + 5;
     const fillRef = glow === "filter" ? `url(#${gradientFor(fill)})` : fill;
     const dashArray = dashArrayAttr(style);
@@ -852,7 +861,7 @@ function renderPage(
         const py = y + h / 2;
         cellSvg.push(
           `<text x="${px.toFixed(1)}" y="${py.toFixed(1)}" text-anchor="middle" ` +
-            `font-family="${fontFamily}" font-size="${fontSize}" fill="${fontColor}" ${bold} ` +
+            `font-family="${fontFamily}" font-size="${fontSize}" fill="${fontColor}"${fontAttrs} ` +
             `transform="rotate(-90 ${px.toFixed(1)} ${py.toFixed(1)})">${escapeXml(line)}</text>`,
         );
         return;
@@ -870,7 +879,7 @@ function renderPage(
 
       cellSvg.push(
         `<text x="${textX}" y="${textY + i * 14}" text-anchor="${textAnchor}" ` +
-          `font-family="${fontFamily}" font-size="${fontSize}" fill="${fontColor}" ${bold}>${escapeXml(line)}</text>`,
+          `font-family="${fontFamily}" font-size="${fontSize}" fill="${fontColor}"${fontAttrs}>${escapeXml(line)}</text>`,
       );
     });
 

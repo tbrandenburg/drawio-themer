@@ -32,8 +32,17 @@ const MODULE_DIR = dirname(fileURLToPath(import.meta.url));
  * explicitly via `font.fontFiles` guarantees "Noto Sans" (the first name
  * in `FONT_FALLBACK_STACK`, see ../render/svg.ts) always resolves
  * correctly, independent of what fonts the host happens to have.
+ *
+ * Bold/Italic/BoldItalic (issue #32) are bundled alongside Regular for
+ * the same reason: once svg.ts emits font-weight="bold"/font-style=
+ * "italic" from draw.io's fontStyle bitmask, resvg's fontdb needs a
+ * matching face file to select - it does no synthetic bolding/slanting
+ * and no OS-level substitution.
  */
 const BUNDLED_FONT_PATH = join(MODULE_DIR, "assets", "NotoSans-Regular.ttf");
+const BUNDLED_BOLD_FONT_PATH = join(MODULE_DIR, "assets", "NotoSans-Bold.ttf");
+const BUNDLED_ITALIC_FONT_PATH = join(MODULE_DIR, "assets", "NotoSans-Italic.ttf");
+const BUNDLED_BOLD_ITALIC_FONT_PATH = join(MODULE_DIR, "assets", "NotoSans-BoldItalic.ttf");
 
 /**
  * Exported solely so tests can render with `loadSystemFonts: false` -
@@ -41,7 +50,12 @@ const BUNDLED_FONT_PATH = join(MODULE_DIR, "assets", "NotoSans-Regular.ttf");
  * the host happens to have) resolves "Noto Sans" and produces real
  * glyphs, not an empty/monospace fallback.
  */
-export { BUNDLED_FONT_PATH };
+export {
+  BUNDLED_FONT_PATH,
+  BUNDLED_BOLD_FONT_PATH,
+  BUNDLED_ITALIC_FONT_PATH,
+  BUNDLED_BOLD_ITALIC_FONT_PATH,
+};
 
 /** Options for {@link rasterizeSvgToPng}. */
 export interface RasterizeOptions {
@@ -58,7 +72,12 @@ export function rasterizeSvgToPng(svg: string, options?: RasterizeOptions): Buff
   const scale = options?.scale ?? 2;
   const resvg = new Resvg(svg, {
     font: {
-      fontFiles: [BUNDLED_FONT_PATH],
+      fontFiles: [
+        BUNDLED_FONT_PATH,
+        BUNDLED_BOLD_FONT_PATH,
+        BUNDLED_ITALIC_FONT_PATH,
+        BUNDLED_BOLD_ITALIC_FONT_PATH,
+      ],
       loadSystemFonts: true,
       defaultFontFamily: "Noto Sans",
     },

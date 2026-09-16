@@ -667,6 +667,65 @@ describe("renderDrawioToSvg", () => {
     expect(textY).toBeGreaterThan(20);
     expect(textY).toBeLessThan(60);
   });
+
+  describe("fontStyle bitmask (issue #32)", () => {
+    function labelSvg(fontStyle: string | undefined): string {
+      const styleAttr = fontStyle === undefined ? "" : `fontStyle=${fontStyle};`;
+      const xml = drawio(
+        '<mxCell id="0"/><mxCell id="1" parent="0"/>' +
+          `<mxCell id="n1" value="Label" style="${styleAttr}" ` +
+          'vertex="1" parent="1"><mxGeometry x="0" y="0" width="100" height="40" as="geometry"/></mxCell>',
+      );
+      return renderDrawioToSvg(xml);
+    }
+
+    it('fontStyle="1" renders bold only', () => {
+      const svg = labelSvg("1");
+      expect(svg).toContain('font-weight="bold"');
+      expect(svg).not.toContain('font-style="italic"');
+      expect(svg).not.toContain("text-decoration=");
+    });
+
+    it('fontStyle="2" renders italic only', () => {
+      const svg = labelSvg("2");
+      expect(svg).not.toContain('font-weight="bold"');
+      expect(svg).toContain('font-style="italic"');
+      expect(svg).not.toContain("text-decoration=");
+    });
+
+    it('fontStyle="4" renders underline only', () => {
+      const svg = labelSvg("4");
+      expect(svg).not.toContain('font-weight="bold"');
+      expect(svg).not.toContain('font-style="italic"');
+      expect(svg).toContain('text-decoration="underline"');
+    });
+
+    it('fontStyle="3" renders both bold and italic', () => {
+      const svg = labelSvg("3");
+      expect(svg).toContain('font-weight="bold"');
+      expect(svg).toContain('font-style="italic"');
+      expect(svg).not.toContain("text-decoration=");
+    });
+
+    it('fontStyle="7" renders bold, italic, and underline together', () => {
+      const svg = labelSvg("7");
+      expect(svg).toContain('font-weight="bold"');
+      expect(svg).toContain('font-style="italic"');
+      expect(svg).toContain('text-decoration="underline"');
+    });
+
+    it("fontStyle absent or 0 renders none of the style attributes", () => {
+      const svgAbsent = labelSvg(undefined);
+      expect(svgAbsent).not.toContain('font-weight="bold"');
+      expect(svgAbsent).not.toContain('font-style="italic"');
+      expect(svgAbsent).not.toContain("text-decoration=");
+
+      const svgZero = labelSvg("0");
+      expect(svgZero).not.toContain('font-weight="bold"');
+      expect(svgZero).not.toContain('font-style="italic"');
+      expect(svgZero).not.toContain("text-decoration=");
+    });
+  });
 });
 
 describe("convertWebpImagesToPng", () => {
