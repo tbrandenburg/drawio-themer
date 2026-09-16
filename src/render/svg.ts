@@ -31,6 +31,11 @@ import { parseStyle } from "../drawio/styles.js";
  */
 export const FONT_FALLBACK_STACK = "Noto Sans, Helvetica Neue, Arial, sans-serif";
 
+// Mirrors mxgraph's mxConstants.LINE_HEIGHT: real draw.io spaces wrapped
+// label lines at ~1.2x the cell's fontSize, not a fixed pixel constant
+// (issue #47).
+const LINE_HEIGHT_FACTOR = 1.2;
+
 /** Whether to draw a soft glow behind nodes/edges using a real SVG `<filter>`. */
 export type GlowMode = "none" | "filter";
 
@@ -558,6 +563,36 @@ function renderPage(
     return gid;
   }
 
+  // Real mxgraph's gradient direction vectors (mxShape.js paints
+  // `gradientDirection` as one of 4 axis-aligned vectors across the
+  // shape's own bounding box), "south" (top -> bottom) is the default
+  // when the property is unset.
+  const GRADIENT_VECTORS: Record<string, { x1: string; y1: string; x2: string; y2: string }> = {
+    south: { x1: "0", y1: "0", x2: "0", y2: "1" },
+    north: { x1: "0", y1: "1", x2: "0", y2: "0" },
+    east: { x1: "0", y1: "0", x2: "1", y2: "0" },
+    west: { x1: "1", y1: "0", x2: "0", y2: "0" },
+  };
+
+  // Renders a real draw.io `gradientColor`/`gradientDirection` gradient
+  // (as opposed to `gradientFor` above, which is only the internal
+  // `--glow` flag's synthetic lighten-tint gradient).
+  function gradientForColors(fill: string, gradientColor: string, direction: string): string {
+    const key = `${fill}|${gradientColor}|${direction}`;
+    const existing = gradientIds.get(key);
+    if (existing) return existing;
+    const gid = `grad${gradientIds.size}`;
+    gradientIds.set(key, gid);
+    const vector = GRADIENT_VECTORS[direction] ?? GRADIENT_VECTORS.south!;
+    defs.push(
+      `<linearGradient id="${gid}" x1="${vector.x1}" y1="${vector.y1}" x2="${vector.x2}" y2="${vector.y2}">` +
+        `<stop offset="0" stop-color="${fill}"/>` +
+        `<stop offset="1" stop-color="${gradientColor}"/>` +
+        "</linearGradient>",
+    );
+    return gid;
+  }
+
   /**
    * A child cell's `<mxGeometry x y>` is relative to its parent cell (e.g.
    * a swimlane/container), not the page, in draw.io's format. Walk up the
@@ -651,6 +686,91 @@ function renderPage(
     return clipToShape(geo.shape, cx, cy, otherX, otherY, geo.x, geo.y, geo.w, geo.h);
   }
 
+  /** The four cardinal sides a connection point can sit on, used by
+   * `orthogonalRoute` to decide whether an edge's first/last segment
+   * runs horizontally or vertically. */
+  type Side = "N" | "S" | "E" | "W";
+
+  /**
+   * Derives a cardinal `Side` from a fixed fractional connection point
+   * (`exitX/exitY` or `entryX/entryY`), matching draw.io's convention
+   * that one axis sits at an extreme (`0` or `1`) while the other is
+   * free (typically `0.5`). Returns `undefined` when the fractions are
+   * missing, unparseable, or don't clearly identify a side (e.g. a
+   * point on a corner), so callers can fall back to position-based
+   * inference.
+   */
+  function sideFromFraction(
+    fracX: string | undefined,
+    fracY: string | undefined,
+  ): Side | undefined {
+    if (fracX === undefined || fracY === undefined) return undefined;
+    const fx = Number.parseFloat(fracX);
+    const fy = Number.parseFloat(fracY);
+    if (Number.isNaN(fx) || Number.isNaN(fy)) return undefined;
+    if (fx <= 0.001) return "W";
+    if (fx >= 0.999) return "E";
+    if (fy <= 0.001) return "N";
+    if (fy >= 0.999) return "S";
+    return undefined;
+  }
+
+  /**
+   * Falls back to inferring a side from the relative position of two
+   * points (mirrors mxgraph's own fallback when no fixed connection
+   * point is set): picks the axis with the larger displacement and the
+   * side that direction points toward.
+   */
+  function inferSide(from: [number, number], to: [number, number]): Side {
+    const dx = to[0] - from[0];
+    const dy = to[1] - from[1];
+    if (Math.abs(dx) >= Math.abs(dy)) return dx >= 0 ? "E" : "W";
+    return dy >= 0 ? "S" : "N";
+  }
+
+  /**
+   * Bounded orthogonal (elbow) router used for
+   * `edgeStyle=orthogonalEdgeStyle`/`elbowEdgeStyle` edges that have no
+   * explicit waypoints (issue #48). Produces a 2-3 segment,
+   * horizontal/vertical-only path between `p1` and `p2`: a "Z" shape
+   * whose first segment leaves `p1` on `exitSide`'s axis (horizontal
+   * for E/W, vertical for N/S), through a midpoint, into `p2`. This is
+   * intentionally not a full port of mxgraph's `OrthConnector`
+   * (no obstacle avoidance, no jetty stubs) — see AGENTS.md's
+   * "structural fidelity limits" note.
+   */
+  function orthogonalRoute(
+    p1: [number, number],
+    exitSide: Side,
+    p2: [number, number],
+  ): Array<[number, number]> {
+    const [x1, y1] = p1;
+    const [x2, y2] = p2;
+    // Already axis-aligned: a single straight segment is already
+    // perpendicular/orthogonal, no elbow needed.
+    if (x1 === x2 || y1 === y2) return [p1, p2];
+    const points: Array<[number, number]> =
+      exitSide === "E" || exitSide === "W"
+        ? [
+            [x1, y1],
+            [(x1 + x2) / 2, y1],
+            [(x1 + x2) / 2, y2],
+            [x2, y2],
+          ]
+        : [
+            [x1, y1],
+            [x1, (y1 + y2) / 2],
+            [x2, (y1 + y2) / 2],
+            [x2, y2],
+          ];
+    // Drop consecutive duplicate points (e.g. when p1/p2 already share
+    // the midpoint's coordinate), which would otherwise render as
+    // zero-length segments.
+    return points.filter(
+      (pt, i) => i === 0 || pt[0] !== points[i - 1]![0] || pt[1] !== points[i - 1]![1],
+    );
+  }
+
   /**
    * Resolves an edge cell's actual rendered path (source connection point,
    * any explicit waypoints, target connection point), in the same way the
@@ -699,6 +819,15 @@ function renderPage(
       towardFromTarget[0],
       towardFromTarget[1],
     );
+
+    const edgeStyle = style.properties.edgeStyle;
+    const isOrthogonal = edgeStyle === "orthogonalEdgeStyle" || edgeStyle === "elbowEdgeStyle";
+    if (isOrthogonal && waypoints.length === 0) {
+      const exitSide =
+        sideFromFraction(style.properties.exitX, style.properties.exitY) ?? inferSide(c1, c2);
+      return orthogonalRoute([p1x, p1y], exitSide, [p2x, p2y]);
+    }
+
     return [[p1x, p1y], ...waypoints, [p2x, p2y]];
   }
 
@@ -1015,7 +1144,20 @@ function renderPage(
       (isItalic ? ' font-style="italic"' : "") +
       (isUnderline ? ' text-decoration="underline"' : "");
     let textY = valign === "top" ? y + 18 : y + h / 2 + 5;
-    const fillRef = glow === "filter" ? `url(#${gradientFor(fill)})` : fill;
+    const gradientColor = style.properties.gradientColor;
+    const gradientDirection = style.properties.gradientDirection ?? "south";
+    const fillRef = gradientColor
+      ? `url(#${gradientForColors(fill, gradientColor, gradientDirection)})`
+      : glow === "filter"
+        ? `url(#${gradientFor(fill)})`
+        : fill;
+    // mxgraph draws a drop shadow (offset ~2,3px, gray, low opacity) on any
+    // vertex whose style sets `shadow=1` (dark-neon-mode, monokai, dracula
+    // all set this) - wrap that cell's shape markup in the shared
+    // `dropShadow` SVG filter rather than touching fill/gradient resolution.
+    const hasShadow = style.properties.shadow === "1";
+    const withShadow = (svg: string): string =>
+      hasShadow ? `<g filter="url(#dropShadow)">${svg}</g>` : svg;
     const dashArray = dashArrayAttr(style);
     const { fill: fillOpacity, stroke: strokeOpacity } = opacities(style);
     // Collect this cell's shape + label markup separately so an optional
@@ -1024,7 +1166,10 @@ function renderPage(
     const cellSvg: string[] = [];
 
     if (shape.includes("cylinder")) {
-      const eh = h * 0.18;
+      // Matches real mxgraph's mxCylinder.js getCylinderSize(): the
+      // ellipse cap height is proportional (h/5) but capped at a flat
+      // 40px for tall cylinders, instead of scaling forever.
+      const eh = Math.min(40, Math.round(h / 5));
       const cyl =
         `<g stroke="${stroke}" stroke-width="${strokeWidth}" stroke-opacity="${strokeOpacity}" ` +
         `fill="${fillRef}" fill-opacity="${fillOpacity}"${dashArray}>` +
@@ -1032,7 +1177,9 @@ function renderPage(
         `L ${x + w},${y + eh} A ${w / 2},${eh} 0 0 0 ${x},${y + eh} Z"/>` +
         `<ellipse cx="${x + w / 2}" cy="${y + eh}" rx="${w / 2}" ry="${eh}"/>` +
         "</g>";
-      cellSvg.push(glow === "filter" ? `<g filter="url(#softGlow)">${cyl}</g>${cyl}` : cyl);
+      cellSvg.push(
+        withShadow(glow === "filter" ? `<g filter="url(#softGlow)">${cyl}</g>${cyl}` : cyl),
+      );
       textY = y + h / 2 + eh / 2;
     } else if (shape === "image" && style.properties.image) {
       // shape=image cells (e.g. embedded PNG icons via a data: URI) have
@@ -1049,7 +1196,9 @@ function renderPage(
         `fill="${fillRef}" fill-opacity="${fillOpacity}" stroke="${stroke}" ` +
         `stroke-width="${strokeWidth}" stroke-opacity="${strokeOpacity}"${dashArray}/>`;
       cellSvg.push(
-        glow === "filter" ? `<g filter="url(#softGlow)">${ellipse}</g>${ellipse}` : ellipse,
+        withShadow(
+          glow === "filter" ? `<g filter="url(#softGlow)">${ellipse}</g>${ellipse}` : ellipse,
+        ),
       );
     } else if (isRhombus) {
       const points = rhombusPoints(x, y, w, h);
@@ -1057,7 +1206,9 @@ function renderPage(
         `<polygon points="${polygonPoints(points)}" fill="${fillRef}" fill-opacity="${fillOpacity}" ` +
         `stroke="${stroke}" stroke-width="${strokeWidth}" stroke-opacity="${strokeOpacity}"${dashArray}/>`;
       cellSvg.push(
-        glow === "filter" ? `<g filter="url(#softGlow)">${rhombus}</g>${rhombus}` : rhombus,
+        withShadow(
+          glow === "filter" ? `<g filter="url(#softGlow)">${rhombus}</g>${rhombus}` : rhombus,
+        ),
       );
     } else if (isText) {
       // No box at all - real draw.io renders the "Text" shape as a bare
@@ -1070,7 +1221,9 @@ function renderPage(
         `<polygon points="${polygonPoints(points)}" fill="${fillRef}" fill-opacity="${fillOpacity}" ` +
         `stroke="${stroke}" stroke-width="${strokeWidth}" stroke-opacity="${strokeOpacity}"${dashArray}/>`;
       cellSvg.push(
-        glow === "filter" ? `<g filter="url(#softGlow)">${hexagon}</g>${hexagon}` : hexagon,
+        withShadow(
+          glow === "filter" ? `<g filter="url(#softGlow)">${hexagon}</g>${hexagon}` : hexagon,
+        ),
       );
     } else if (
       isContainer(cell) &&
@@ -1094,9 +1247,11 @@ function renderPage(
       const bodyFillRef =
         bodyFill === undefined
           ? "none"
-          : glow === "filter"
-            ? `url(#${gradientFor(bodyFill)})`
-            : bodyFill;
+          : gradientColor
+            ? `url(#${gradientForColors(bodyFill, gradientColor, gradientDirection)})`
+            : glow === "filter"
+              ? `url(#${gradientFor(bodyFill)})`
+              : bodyFill;
       const titleRect =
         `<rect x="${x}" y="${y}" width="${titleW}" height="${titleH}" rx="${rx}" ` +
         `fill="${fillRef}" fill-opacity="${fillOpacity}" stroke="${stroke}" ` +
@@ -1109,15 +1264,19 @@ function renderPage(
           `fill="${bodyFillRef}" fill-opacity="${fillOpacity}" stroke="${stroke}" ` +
           `stroke-width="${strokeWidth}" stroke-opacity="${strokeOpacity}"${dashArray}/>`;
       cellSvg.push(
-        glow === "filter" ? `<g filter="url(#softGlow)">${titleRect}</g>${titleRect}` : titleRect,
+        withShadow(
+          glow === "filter" ? `<g filter="url(#softGlow)">${titleRect}</g>${titleRect}` : titleRect,
+        ),
       );
-      cellSvg.push(bodyRect);
+      cellSvg.push(withShadow(bodyRect));
     } else {
       const rect =
         `<rect x="${x}" y="${y}" width="${w}" height="${h}" rx="${rx}" ` +
         `fill="${fillRef}" fill-opacity="${fillOpacity}" stroke="${stroke}" ` +
         `stroke-width="${strokeWidth}" stroke-opacity="${strokeOpacity}"${dashArray}/>`;
-      cellSvg.push(glow === "filter" ? `<g filter="url(#softGlow)">${rect}</g>${rect}` : rect);
+      cellSvg.push(
+        withShadow(glow === "filter" ? `<g filter="url(#softGlow)">${rect}</g>${rect}` : rect),
+      );
     }
 
     const wrap = style.properties.whiteSpace === "wrap";
@@ -1147,16 +1306,26 @@ function renderPage(
       const wrapped = wrap ? wrapLabel(label, w, fontSize, isBold) : label.split("\n");
       lines = wrapped.map((text) => ({ text, fontAttrs }));
     }
+
+    // Center the whole multi-line block around the single-line textY
+    // (rather than pinning the first line there and pushing later lines
+    // further down), matching mxgraph's mxText.js block-centering for
+    // verticalAlign=middle. Top-aligned labels grow downward as before.
+    const lineHeight = (Number.parseFloat(fontSize) || 12) * LINE_HEIGHT_FACTOR;
+    if (valign !== "top") {
+      textY -= ((lines.length - 1) * lineHeight) / 2;
+    }
+
     lines.forEach(({ text: line, fontAttrs: lineFontAttrs }, i) => {
       if (rotatedLabel) {
         // Rotate about the label's own anchor point so it reads
         // bottom-to-top along the left edge, matching draw.io's
         // horizontal=0 swimlane title convention.
         // Center the whole label block on the mid-point, then offset each
-        // line by i * 14 along the (pre-rotation) x-axis so lines don't
-        // overlap - matches the unrotated branch's `textY + i * 14` offset,
-        // just applied before the -90deg rotation is applied.
-        const px = x + 16 + spacingLeft + i * 14;
+        // line by i * lineHeight along the (pre-rotation) x-axis so lines
+        // don't overlap - matches the unrotated branch's `textY + i *
+        // lineHeight` offset, just applied before the -90deg rotation.
+        const px = x + 16 + spacingLeft + i * lineHeight;
         const py = y + h / 2;
         cellSvg.push(
           `<text x="${px.toFixed(1)}" y="${py.toFixed(1)}" text-anchor="middle" ` +
@@ -1177,7 +1346,7 @@ function renderPage(
       }
 
       cellSvg.push(
-        `<text x="${textX}" y="${textY + i * 14}" text-anchor="${textAnchor}" ` +
+        `<text x="${textX}" y="${textY + i * lineHeight}" text-anchor="${textAnchor}" ` +
           `font-family="${fontFamily}" font-size="${fontSize}" fill="${fontColor}"${lineFontAttrs}>${escapeXml(line)}</text>`,
       );
     });
@@ -1250,6 +1419,18 @@ export function renderDrawioToSvg(drawioXml: string, options: RenderOptions = {}
     '<marker id="ovalStart" markerWidth="8" markerHeight="8" refX="2" refY="4" ' +
       'orient="auto-start-reverse"><circle cx="4" cy="4" r="3.5" fill="#888"/></marker>',
   ];
+  // Matches real mxgraph's default vertex shadow (mxConstants.SHADOW_COLOR
+  // gray, ~2,3px offset) applied whenever a style sets `shadow=1` (issue
+  // #44), independent of the `glow` render option. Only emit the filter
+  // def when at least one cell actually uses it, matching the existing
+  // `<filter` no-op-by-default contract other tests assert on.
+  if (modelXmls.some((xml) => /style="[^"]*\bshadow=1\b/.test(xml))) {
+    defs.push(
+      '<filter id="dropShadow" x="-40%" y="-40%" width="180%" height="180%">' +
+        '<feDropShadow dx="2" dy="3" stdDeviation="2" flood-color="#000000" flood-opacity="0.4"/>' +
+        "</filter>",
+    );
+  }
   if (glow === "filter") {
     defs.push(
       '<filter id="softGlow" x="-60%" y="-60%" width="220%" height="220%">' +

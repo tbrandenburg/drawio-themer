@@ -35,9 +35,26 @@ describe("renderDrawioToSvg", () => {
 
     const svg = renderDrawioToSvg(xml);
 
+    // Matches mxgraph's mxCylinder.js getCylinderSize(): min(40, round(h/5))
+    // => min(40, round(100/5)) = 20.
     expect(svg).toContain("<ellipse");
-    expect(svg).toContain('<path d="M 0,18');
+    expect(svg).toContain('<path d="M 0,20');
     expect(svg).not.toMatch(/<rect x="0" y="0"/);
+  });
+
+  it("caps the cylinder cap height at 40px for tall cylinders (mxgraph parity)", () => {
+    const xml = drawio(
+      '<mxCell id="0"/><mxCell id="1" parent="0"/>' +
+        '<mxCell id="db1" value="Tall DB" style="shape=cylinder3;fillColor=#ffe6cc;strokeColor=#d79b00;" ' +
+        'vertex="1" parent="1"><mxGeometry x="0" y="0" width="80" height="400" as="geometry"/></mxCell>',
+    );
+
+    const svg = renderDrawioToSvg(xml);
+
+    // Uncapped proportional formula would give h*0.18 = 72; real mxgraph
+    // caps it at 40 via min(40, round(400/5)) = min(40, 80) = 40.
+    expect(svg).toContain('<path d="M 0,40');
+    expect(svg).not.toContain('<path d="M 0,72');
   });
 
   it("clips edges to the node's border instead of drawing from center to center", () => {
@@ -551,6 +568,40 @@ describe("renderDrawioToSvg", () => {
     expect(Number(match?.[4])).toBe(50);
   });
 
+  it("routes an edgeStyle=orthogonalEdgeStyle edge with no explicit waypoints as a perpendicular polyline, not a diagonal line (issue #48)", () => {
+    const xml = drawio(
+      '<mxCell id="0"/><mxCell id="1" parent="0"/>' +
+        '<mxCell id="A" value="Source" style="rounded=0;whiteSpace=wrap;html=1;" ' +
+        'vertex="1" parent="1"><mxGeometry x="40" y="40" width="120" height="60" as="geometry"/></mxCell>' +
+        '<mxCell id="B" value="Target" style="rounded=0;whiteSpace=wrap;html=1;" ' +
+        'vertex="1" parent="1"><mxGeometry x="400" y="300" width="120" height="60" as="geometry"/></mxCell>' +
+        '<mxCell id="E1" style="edgeStyle=orthogonalEdgeStyle;rounded=1;orthogonalLoop=1;jettySize=auto;' +
+        'html=1;exitX=1;exitY=0.5;entryX=0;entryY=0.5;" edge="1" parent="1" source="A" target="B">' +
+        '<mxGeometry relative="1" as="geometry"/></mxCell>',
+    );
+
+    const svg = renderDrawioToSvg(xml);
+
+    expect(svg).not.toMatch(/<line x1="160\.0" y1="70\.0" x2="400\.0" y2="330\.0"/);
+    const match = svg.match(/<polyline points="([^"]+)"/);
+    expect(match).not.toBeNull();
+    const points = match![1]!
+      .trim()
+      .split(/\s+/)
+      .map((pair) => pair.split(",").map(Number) as [number, number]);
+    // Exit right of A (160,70), entry left of B (400,330): every
+    // segment between consecutive points must be purely horizontal or
+    // vertical (no diagonal segment).
+    expect(points[0]).toEqual([160, 70]);
+    expect(points[points.length - 1]).toEqual([400, 330]);
+    for (let i = 1; i < points.length; i++) {
+      const [ax, ay] = points[i - 1]!;
+      const [bx, by] = points[i]!;
+      const isHorizontalOrVertical = ax === bx || ay === by;
+      expect(isHorizontalOrVertical).toBe(true);
+    }
+  });
+
   it("rotates a horizontal=0 swimlane title -90deg along the left edge instead of centering it horizontally", () => {
     const xml = drawio(
       '<mxCell id="0"/><mxCell id="1" parent="0"/>' +
@@ -655,6 +706,63 @@ describe("renderDrawioToSvg", () => {
 
     const textCount = (svg.match(/<text /g) ?? []).length;
     expect(textCount).toBeGreaterThan(1);
+  });
+
+  it("scales multi-line spacing with fontSize instead of a fixed 14px constant (issue #47)", () => {
+    const twoLineXml = (fontSize: number) =>
+      drawio(
+        '<mxCell id="0"/><mxCell id="1" parent="0"/>' +
+          `<mxCell id="n1" value="Line one&#xa;Line two" ` +
+          `style="whiteSpace=wrap;fontSize=${fontSize};" vertex="1" parent="1">` +
+          '<mxGeometry x="0" y="0" width="100" height="100" as="geometry"/></mxCell>',
+      );
+
+    const ys = (svg: string): number[] =>
+      [...svg.matchAll(/<text[^>]* y="([\d.-]+)"/g)].map((m) => Number(m[1]));
+
+    const spacingAt = (fontSize: number): number => {
+      const [y0, y1] = ys(renderDrawioToSvg(twoLineXml(fontSize)));
+      expect(y1).toBeDefined();
+      return y1 - y0;
+    };
+
+    const spacing12 = spacingAt(12);
+    const spacing24 = spacingAt(24);
+
+    // Fixed-14px behaviour would produce identical spacing regardless of
+    // fontSize; the fontSize-derived line height must scale with it.
+    expect(spacing12).toBeCloseTo(12 * 1.2, 5);
+    expect(spacing24).toBeCloseTo(24 * 1.2, 5);
+    expect(spacing24).toBeGreaterThan(spacing12);
+  });
+
+  it("centers a multi-line block around the single-line vertical center for verticalAlign=middle (issue #47)", () => {
+    const singleLineXml = drawio(
+      '<mxCell id="0"/><mxCell id="1" parent="0"/>' +
+        '<mxCell id="n1" value="One line" ' +
+        'style="whiteSpace=wrap;fontSize=24;" vertex="1" parent="1">' +
+        '<mxGeometry x="0" y="0" width="100" height="100" as="geometry"/></mxCell>',
+    );
+    const twoLineXml = drawio(
+      '<mxCell id="0"/><mxCell id="1" parent="0"/>' +
+        '<mxCell id="n1" value="Line one&#xa;Line two" ' +
+        'style="whiteSpace=wrap;fontSize=24;" vertex="1" parent="1">' +
+        '<mxGeometry x="0" y="0" width="100" height="100" as="geometry"/></mxCell>',
+    );
+
+    const singleY = Number(renderDrawioToSvg(singleLineXml).match(/<text[^>]* y="([\d.-]+)"/)?.[1]);
+    const twoLineYs = [...renderDrawioToSvg(twoLineXml).matchAll(/<text[^>]* y="([\d.-]+)"/g)].map(
+      (m) => Number(m[1]),
+    );
+    const [firstY, secondY] = twoLineYs;
+
+    const lineHeight = 24 * 1.2;
+    // The 2-line block must be centered on the single-line y, i.e. the
+    // first line sits half a line-height above it and the second half a
+    // line-height below - not pinned at the single-line y with the second
+    // line pushed further down.
+    expect(firstY).toBeCloseTo(singleY - lineHeight / 2, 5);
+    expect(secondY).toBeCloseTo(singleY + lineHeight / 2, 5);
   });
 
   it("does not wrap a label when whiteSpace=wrap is absent, even if it overflows", () => {
@@ -929,6 +1037,62 @@ describe("renderDrawioToSvg", () => {
     expect(textY).toBeLessThan(60);
   });
 
+  describe("shadow rendering (issue #44)", () => {
+    it("wraps a rect with the dropShadow filter when shadow=1", () => {
+      const xml = drawio(
+        '<mxCell id="0"/><mxCell id="1" parent="0"/>' +
+          '<mxCell id="n1" value="Start" style="fillColor=#dae8fc;strokeColor=#6c8ebf;shadow=1;" ' +
+          'vertex="1" parent="1"><mxGeometry x="10" y="20" width="100" height="50" as="geometry"/></mxCell>',
+      );
+
+      const svg = renderDrawioToSvg(xml);
+
+      expect(svg).toContain('<filter id="dropShadow"');
+      expect(svg).toMatch(
+        /<g filter="url\(#dropShadow\)"><rect x="10" y="20" width="100" height="50"/,
+      );
+    });
+
+    it("does not emit the dropShadow filter or wrapper when no cell sets shadow=1", () => {
+      const xml = drawio(
+        '<mxCell id="0"/><mxCell id="1" parent="0"/>' +
+          '<mxCell id="n1" value="Start" style="fillColor=#dae8fc;strokeColor=#6c8ebf;" ' +
+          'vertex="1" parent="1"><mxGeometry x="10" y="20" width="100" height="50" as="geometry"/></mxCell>',
+      );
+
+      const svg = renderDrawioToSvg(xml);
+
+      expect(svg).not.toContain("dropShadow");
+      expect(svg).not.toContain("<filter");
+    });
+
+    it("wraps a cylinder shape with the dropShadow filter when shadow=1", () => {
+      const xml = drawio(
+        '<mxCell id="0"/><mxCell id="1" parent="0"/>' +
+          '<mxCell id="db1" value="Orders DB" ' +
+          'style="shape=cylinder3;fillColor=#ffe6cc;strokeColor=#d79b00;shadow=1;" ' +
+          'vertex="1" parent="1"><mxGeometry x="0" y="0" width="80" height="100" as="geometry"/></mxCell>',
+      );
+
+      const svg = renderDrawioToSvg(xml);
+
+      expect(svg).toContain('<filter id="dropShadow"');
+      expect(svg).toMatch(/<g filter="url\(#dropShadow\)"><g stroke="#d79b00"/);
+    });
+
+    it("treats shadow=0 the same as no shadow property", () => {
+      const xml = drawio(
+        '<mxCell id="0"/><mxCell id="1" parent="0"/>' +
+          '<mxCell id="n1" value="Start" style="fillColor=#dae8fc;strokeColor=#6c8ebf;shadow=0;" ' +
+          'vertex="1" parent="1"><mxGeometry x="10" y="20" width="100" height="50" as="geometry"/></mxCell>',
+      );
+
+      const svg = renderDrawioToSvg(xml);
+
+      expect(svg).not.toContain("dropShadow");
+    });
+  });
+
   describe("fontStyle bitmask (issue #32)", () => {
     function labelSvg(fontStyle: string | undefined): string {
       const styleAttr = fontStyle === undefined ? "" : `fontStyle=${fontStyle};`;
@@ -1062,5 +1226,84 @@ describe("convertWebpImagesToPng", () => {
     const converted = await convertWebpImagesToPng(xml);
 
     expect(converted).toBe(xml);
+  });
+});
+
+describe("renderDrawioToSvg gradientColor/gradientDirection", () => {
+  it("renders a top-to-bottom linearGradient when gradientDirection is unset (south default)", () => {
+    const xml = drawio(
+      '<mxCell id="0"/><mxCell id="1" parent="0"/>' +
+        '<mxCell id="n1" value="Box" style="fillColor=#ff0000;gradientColor=#0000ff;" ' +
+        'vertex="1" parent="1"><mxGeometry x="0" y="0" width="80" height="40" as="geometry"/></mxCell>',
+    );
+
+    const svg = renderDrawioToSvg(xml);
+
+    expect(svg).toMatch(/<linearGradient id="grad0" x1="0" y1="0" x2="0" y2="1">/);
+    expect(svg).toContain('<stop offset="0" stop-color="#ff0000"/>');
+    expect(svg).toContain('<stop offset="1" stop-color="#0000ff"/>');
+    expect(svg).toContain('fill="url(#grad0)"');
+  });
+
+  it("renders a bottom-to-top linearGradient for gradientDirection=north", () => {
+    const xml = drawio(
+      '<mxCell id="0"/><mxCell id="1" parent="0"/>' +
+        '<mxCell id="n1" value="Box" style="fillColor=#ff0000;gradientColor=#0000ff;gradientDirection=north;" ' +
+        'vertex="1" parent="1"><mxGeometry x="0" y="0" width="80" height="40" as="geometry"/></mxCell>',
+    );
+
+    const svg = renderDrawioToSvg(xml);
+
+    expect(svg).toMatch(/<linearGradient id="grad0" x1="0" y1="1" x2="0" y2="0">/);
+  });
+
+  it("renders a left-to-right linearGradient for gradientDirection=east", () => {
+    const xml = drawio(
+      '<mxCell id="0"/><mxCell id="1" parent="0"/>' +
+        '<mxCell id="n1" value="Box" style="fillColor=#ff0000;gradientColor=#0000ff;gradientDirection=east;" ' +
+        'vertex="1" parent="1"><mxGeometry x="0" y="0" width="80" height="40" as="geometry"/></mxCell>',
+    );
+
+    const svg = renderDrawioToSvg(xml);
+
+    expect(svg).toMatch(/<linearGradient id="grad0" x1="0" y1="0" x2="1" y2="0">/);
+  });
+
+  it("renders a right-to-left linearGradient for gradientDirection=west", () => {
+    const xml = drawio(
+      '<mxCell id="0"/><mxCell id="1" parent="0"/>' +
+        '<mxCell id="n1" value="Box" style="fillColor=#ff0000;gradientColor=#0000ff;gradientDirection=west;" ' +
+        'vertex="1" parent="1"><mxGeometry x="0" y="0" width="80" height="40" as="geometry"/></mxCell>',
+    );
+
+    const svg = renderDrawioToSvg(xml);
+
+    expect(svg).toMatch(/<linearGradient id="grad0" x1="1" y1="0" x2="0" y2="0">/);
+  });
+
+  it("triggers gradient rendering without the --glow flag", () => {
+    const xml = drawio(
+      '<mxCell id="0"/><mxCell id="1" parent="0"/>' +
+        '<mxCell id="n1" value="Box" style="fillColor=#ff0000;gradientColor=#0000ff;" ' +
+        'vertex="1" parent="1"><mxGeometry x="0" y="0" width="80" height="40" as="geometry"/></mxCell>',
+    );
+
+    const svg = renderDrawioToSvg(xml, {});
+
+    expect(svg).toContain("<linearGradient");
+    expect(svg).toContain('fill="url(#grad0)"');
+  });
+
+  it("renders a flat solid fill (no gradient) for a cell without gradientColor", () => {
+    const xml = drawio(
+      '<mxCell id="0"/><mxCell id="1" parent="0"/>' +
+        '<mxCell id="n1" value="Box" style="fillColor=#ff0000;" ' +
+        'vertex="1" parent="1"><mxGeometry x="0" y="0" width="80" height="40" as="geometry"/></mxCell>',
+    );
+
+    const svg = renderDrawioToSvg(xml);
+
+    expect(svg).not.toContain("<linearGradient");
+    expect(svg).toContain('fill="#ff0000"');
   });
 });
