@@ -160,6 +160,53 @@ describe("renderDrawioToSvg", () => {
     expect(svg).toContain('rx="0"');
   });
 
+  it("splits a swimlane container into a filled title strip and an unfilled body when startSize>0 and no swimlaneFillColor is set (issue #42)", () => {
+    const xml = drawio(
+      '<mxCell id="0"/><mxCell id="1" parent="0"/>' +
+        '<mxCell id="lane" value="Cross-Cutting Services" ' +
+        'style="swimlane;html=1;rounded=1;startSize=52;fillColor=#fafafa;strokeColor=#e4e4e7;horizontal=0;" ' +
+        'vertex="1" parent="1"><mxGeometry x="20" y="20" width="300" height="880" as="geometry"/></mxCell>',
+    );
+
+    const svg = renderDrawioToSvg(xml);
+
+    // Title strip: 52-wide along the rotated-title (horizontal=0) left
+    // edge, filled with the style's fillColor.
+    expect(svg).toContain('<rect x="20" y="20" width="52" height="880"');
+    expect(svg).toContain('fill="#fafafa"');
+    // Body: the remaining 300-52=248-wide region, left unfilled since no
+    // explicit swimlaneFillColor was set.
+    expect(svg).toContain('<rect x="72" y="20" width="248" height="880"');
+    expect(svg).toContain('fill="none"');
+  });
+
+  it("fills a swimlane container's body with swimlaneFillColor when explicitly set (issue #42)", () => {
+    const xml = drawio(
+      '<mxCell id="0"/><mxCell id="1" parent="0"/>' +
+        '<mxCell id="lane" value="Lane" ' +
+        'style="swimlane;startSize=52;fillColor=#fafafa;swimlaneFillColor=#123456;horizontal=0;" ' +
+        'vertex="1" parent="1"><mxGeometry x="0" y="0" width="300" height="200" as="geometry"/></mxCell>',
+    );
+
+    const svg = renderDrawioToSvg(xml);
+
+    expect(svg).toContain('<rect x="52" y="0" width="248" height="200"');
+    expect(svg).toContain('fill="#123456"');
+  });
+
+  it("does not split a plain (non-container) rect with startSize set, keeping a single fill (issue #42)", () => {
+    const xml = drawio(
+      '<mxCell id="0"/><mxCell id="1" parent="0"/>' +
+        '<mxCell id="n1" value="Box" style="startSize=40;fillColor=#eeeeee;" ' +
+        'vertex="1" parent="1"><mxGeometry x="0" y="0" width="200" height="100" as="geometry"/></mxCell>',
+    );
+
+    const svg = renderDrawioToSvg(xml);
+
+    expect(svg).toContain('<rect x="0" y="0" width="200" height="100"');
+    expect(svg).not.toContain('fill="none"');
+  });
+
   it("appends the font fallback stack to whatever fontFamily the theme sets", () => {
     const xml = drawio(
       '<mxCell id="0"/><mxCell id="1" parent="0"/>' +
