@@ -131,6 +131,7 @@ Options:
       --svg-themed, --svg <file>
                             Render the themed output as an approximate
                             SVG render
+      --renderer <backend>  resvg (default) | chromium
   -h, --help
 ```
 
@@ -146,6 +147,33 @@ node dist/cli.js apply input.drawio -t dark-neon-mode -o output.drawio \
   --svg-original before.svg \
   --svg-themed after.svg
 ```
+
+### Rendering backends: `resvg` vs `chromium`
+
+`--png-*` rasterization uses one of two backends, selected with
+`--renderer <backend>`:
+
+- **`resvg` (default)** — a native, offline, zero-setup static SVG
+  rasterizer (`@resvg/resvg-js`). Fast and dependency-light, but
+  structurally limited: no `<foreignObject>`/HTML label support, no
+  real web font loading, and only partial CSS filter support.
+- **`chromium` (opt-in)** — drives a real headless Chromium via
+  `playwright-core` for higher-fidelity output closer to real draw.io's
+  own Electron-based PNG export. Requires a one-time
+  `npx playwright install chromium` (not downloaded by default
+  `npm install`/`make install`):
+
+  ```sh
+  npx playwright install chromium
+  node dist/cli.js apply input.drawio -t dark-neon-mode -o output.drawio \
+    --png-themed after.png --renderer chromium
+  ```
+
+  Known limitation: with glow-enabled themes (e.g. `dark-neon-mode`),
+  `--renderer chromium` can drop perfectly axis-aligned (horizontal or
+  vertical) edges due to a degenerate SVG filter region on zero-width/
+  height bounding boxes (see issue #71). `--renderer resvg` is
+  unaffected.
 
 ## Themes
 

@@ -19,4 +19,4 @@ if (!input || !output) {
 }
 
 const svg = readFileSync(input, "utf8");
-writeFileSync(output, rasterizeSvgToPng(svg));
+writeFileSync(output, await rasterizeSvgToPng(svg));

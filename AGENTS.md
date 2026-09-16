@@ -151,10 +151,12 @@ currently-unfixed**:
   check whether it's better explained as an inherent approximation of
   this architecture than a fixable bug.
 
-Adopting a browser-engine-based rendering backend (see the opt-in
-Chromium rasterization backend proposed in issue #34) would close these
-gaps by construction; short of that, expect them to persist across
-further `wrapLabel`/`svg.ts` fixes.
+Since issue #34, `apply --renderer chromium` opts into a headless
+Chromium rasterization backend (`src/render/rasterize-chromium.ts`, via
+`playwright-core`) that closes these gaps by construction, at the cost
+of a one-time `npx playwright install chromium` setup (not part of the
+default `npm install`/`make install`). `--renderer resvg` (default)
+still has the gaps described above.
 
 ### Fallback: standalone scripts / Playwright browser pipeline
 
@@ -197,3 +199,11 @@ server, manual per-image navigate/screenshot calls):
   updates, verify the body actually changed via a follow-up `gh pr view
 --json body` read, and use `jq -Rs '{body:.}' | gh api ... --input -`
   instead of `-f body=@file`.
+- 2026-09-16: Pitfall: A subagent's handoff claimed a new renderer
+  backend's PNG output "visually inspected, matching structurally" the
+  reference renderer, but the coordinator's own independent visual
+  re-inspection of the same fixture found a dropped edge under a
+  glow-enabled theme. Prevention: never accept a subagent's own
+  "visually confirmed"/"matches" claim as final evidence — always
+  independently re-render and re-inspect at least one real fixture
+  before merging renderer/visual-output changes.
