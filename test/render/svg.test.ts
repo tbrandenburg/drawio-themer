@@ -149,7 +149,9 @@ describe("renderDrawioToSvg", () => {
     const svg = renderDrawioToSvg(xml);
 
     // startSize(40) * (arcSize/100=0.15) * 3 = 18, well under min(w,h)/2=50.
-    expect(svg).toContain('rx="18"');
+    // Rendered as a rounded path (issue #50), so the arc radius shows up
+    // as the Q command's control/end coordinates instead of an rx attr.
+    expect(svg).toContain("Q 0,0 18,0");
   });
 
   it("keeps the flat arc%*min(w,h) formula for a rounded=1 rect that is not a container/swimlane (issue #39)", () => {
@@ -188,12 +190,13 @@ describe("renderDrawioToSvg", () => {
     const svg = renderDrawioToSvg(xml);
 
     // Title strip: 52-wide along the rotated-title (horizontal=0) left
-    // edge, filled with the style's fillColor.
-    expect(svg).toContain('<rect x="20" y="20" width="52" height="880"');
+    // edge, filled with the style's fillColor. rounded=1 -> rendered as a
+    // path rounding only its 2 outer (left) corners (issue #50).
+    expect(svg).toContain('<path d="M 72,20 L');
     expect(svg).toContain('fill="#fafafa"');
     // Body: the remaining 300-52=248-wide region, left unfilled since no
     // explicit swimlaneFillColor was set.
-    expect(svg).toContain('<rect x="72" y="20" width="248" height="880"');
+    expect(svg).toContain('<path d="M 72,900 L');
     expect(svg).toContain('fill="none"');
   });
 
@@ -209,6 +212,42 @@ describe("renderDrawioToSvg", () => {
 
     expect(svg).toContain('<rect x="52" y="0" width="248" height="200"');
     expect(svg).toContain('fill="#123456"');
+  });
+
+  it("renders rounded swimlane title/body regions as paths with only 2 rounded outer corners each, sharp at the seam (issue #50)", () => {
+    const xml = drawio(
+      '<mxCell id="0"/><mxCell id="1" parent="0"/>' +
+        '<mxCell id="lane" value="Lane" ' +
+        'style="swimlane;rounded=1;startSize=52;fillColor=#fafafa;horizontal=0;" ' +
+        'vertex="1" parent="1"><mxGeometry x="0" y="0" width="300" height="200" as="geometry"/></mxCell>',
+    );
+
+    const svg = renderDrawioToSvg(xml);
+
+    const paths = [...svg.matchAll(/<path d="([^"]*Z)"/g)].map((m) => m[1]);
+    expect(paths.length).toBe(2);
+    for (const d of paths) {
+      expect((d.match(/Q/g) ?? []).length).toBe(2);
+    }
+    expect(svg).not.toMatch(/<rect[^>]*rx="\d/);
+  });
+
+  it("renders rounded swimlane title/body regions as paths for horizontal=1 (title on top) with only 2 rounded outer corners each (issue #50)", () => {
+    const xml = drawio(
+      '<mxCell id="0"/><mxCell id="1" parent="0"/>' +
+        '<mxCell id="lane" value="Lane" ' +
+        'style="swimlane;rounded=1;startSize=30;fillColor=#fafafa;horizontal=1;" ' +
+        'vertex="1" parent="1"><mxGeometry x="0" y="0" width="300" height="200" as="geometry"/></mxCell>',
+    );
+
+    const svg = renderDrawioToSvg(xml);
+
+    const paths = [...svg.matchAll(/<path d="([^"]*Z)"/g)].map((m) => m[1]);
+    expect(paths.length).toBe(2);
+    for (const d of paths) {
+      expect((d.match(/Q/g) ?? []).length).toBe(2);
+    }
+    expect(svg).not.toMatch(/<rect[^>]*rx="\d/);
   });
 
   it("does not split a plain (non-container) rect with startSize set, keeping a single fill (issue #42)", () => {
