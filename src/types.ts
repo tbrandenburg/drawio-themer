@@ -31,6 +31,16 @@ export interface ApplyOptions {
    * draw.io's own retina-style PNG export density, issue #23).
    */
   pngScale?: number;
+  /**
+   * Rasterization backend for `--png-original`/`--png-themed` (issue
+   * #34). `"resvg"` (default) is the zero-setup, offline-friendly
+   * static SVG rasterizer with known fidelity limits (no
+   * `<foreignObject>`/HTML labels, no real web font loading). `
+   * "chromium"` drives a real headless Chromium via `playwright-core`
+   * for higher fidelity, but requires a one-time `npx playwright
+   * install chromium` setup.
+   */
+  renderer?: "resvg" | "chromium";
 }
 
 /**

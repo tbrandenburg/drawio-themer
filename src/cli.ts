@@ -24,6 +24,18 @@ function parsePngScale(value: string): number {
   return parsed;
 }
 
+const VALID_RENDERERS = ["resvg", "chromium"] as const;
+type Renderer = (typeof VALID_RENDERERS)[number];
+
+function parseRenderer(value: string): Renderer {
+  if (!VALID_RENDERERS.includes(value as Renderer)) {
+    throw new Error(
+      `Invalid --renderer value "${value}". Expected one of: ${VALID_RENDERERS.join(", ")}.`,
+    );
+  }
+  return value as Renderer;
+}
+
 const program = new Command();
 
 program
@@ -63,6 +75,12 @@ program
     parsePngScale,
     2,
   )
+  .option(
+    "--renderer <backend>",
+    "resvg (default, offline) | chromium (higher fidelity, requires `npx playwright install chromium`)",
+    parseRenderer,
+    "resvg",
+  )
   .action(async (input: string, options: Record<string, unknown>) => {
     const applyOptions: ApplyOptions = {
       theme: options.theme as string,
@@ -76,6 +94,7 @@ program
       svgOriginal: options.svgOriginal as string | undefined,
       svgThemed: options.svgThemed as string | undefined,
       pngScale: options.pngScale as number,
+      renderer: options.renderer as "resvg" | "chromium",
     };
 
     try {

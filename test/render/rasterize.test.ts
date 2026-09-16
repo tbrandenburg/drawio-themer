@@ -15,8 +15,8 @@ function readPngDimensions(png: Buffer): { width: number; height: number } {
 }
 
 describe("rasterizeSvgToPng", () => {
-  it("produces a buffer with valid PNG magic bytes", () => {
-    const png = rasterizeSvgToPng(SIMPLE_SVG);
+  it("produces a buffer with valid PNG magic bytes", async () => {
+    const png = await rasterizeSvgToPng(SIMPLE_SVG);
 
     expect(Buffer.isBuffer(png)).toBe(true);
     expect(png.subarray(0, 8)).toEqual(
@@ -56,27 +56,27 @@ describe("rasterizeSvgToPng", () => {
     expect(nonWhitePixels).toBeGreaterThan(50);
   });
 
-  it("defaults to a 2x render of the SVG's intrinsic pixel dimensions (issue #23)", () => {
+  it("defaults to a 2x render of the SVG's intrinsic pixel dimensions (issue #23)", async () => {
     const intrinsic = new Resvg(SIMPLE_SVG);
-    const rendered = rasterizeSvgToPng(SIMPLE_SVG);
+    const rendered = await rasterizeSvgToPng(SIMPLE_SVG);
 
     const { width, height } = readPngDimensions(rendered);
     expect(width).toBe(intrinsic.width * 2);
     expect(height).toBe(intrinsic.height * 2);
   });
 
-  it("honors a custom scale factor", () => {
+  it("honors a custom scale factor", async () => {
     const intrinsic = new Resvg(SIMPLE_SVG);
-    const rendered = rasterizeSvgToPng(SIMPLE_SVG, { scale: 3 });
+    const rendered = await rasterizeSvgToPng(SIMPLE_SVG, { scale: 3 });
 
     const { width, height } = readPngDimensions(rendered);
     expect(width).toBe(intrinsic.width * 3);
     expect(height).toBe(intrinsic.height * 3);
   });
 
-  it("scale: 1 matches the SVG's intrinsic pixel dimensions", () => {
+  it("scale: 1 matches the SVG's intrinsic pixel dimensions", async () => {
     const intrinsic = new Resvg(SIMPLE_SVG);
-    const rendered = rasterizeSvgToPng(SIMPLE_SVG, { scale: 1 });
+    const rendered = await rasterizeSvgToPng(SIMPLE_SVG, { scale: 1 });
 
     const { width, height } = readPngDimensions(rendered);
     expect(width).toBe(intrinsic.width);

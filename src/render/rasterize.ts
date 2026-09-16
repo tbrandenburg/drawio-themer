@@ -67,8 +67,12 @@ export interface RasterizeOptions {
   scale?: number;
 }
 
-/** Rasterizes an SVG document string to a PNG image buffer. */
-export function rasterizeSvgToPng(svg: string, options?: RasterizeOptions): Buffer {
+/**
+ * Synchronous resvg rendering path, kept as a separate internal function
+ * so it can still be called without incurring any `Promise` overhead
+ * from within the same module (e.g. tests exercising resvg directly).
+ */
+function rasterizeSvgToPngSync(svg: string, options?: RasterizeOptions): Buffer {
   const scale = options?.scale ?? 2;
   const resvg = new Resvg(svg, {
     font: {
@@ -87,4 +91,16 @@ export function rasterizeSvgToPng(svg: string, options?: RasterizeOptions): Buff
     },
   });
   return resvg.render().asPng();
+}
+
+/**
+ * Rasterizes an SVG document string to a PNG image buffer.
+ *
+ * Returns a `Promise` (issue #34) so callers can `await` this uniformly
+ * with the opt-in Chromium backend (`rasterize-chromium.ts`), which is
+ * inherently async. The underlying resvg render itself remains fully
+ * synchronous - no I/O or scheduling is introduced.
+ */
+export async function rasterizeSvgToPng(svg: string, options?: RasterizeOptions): Promise<Buffer> {
+  return rasterizeSvgToPngSync(svg, options);
 }

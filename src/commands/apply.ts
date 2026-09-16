@@ -8,6 +8,10 @@ import { transformDrawioXml } from "../drawio/transform.js";
 import { convertWebpImagesToPng, renderDrawioToSvg } from "../render/svg.js";
 import type { RenderOptions } from "../render/svg.js";
 import { rasterizeSvgToPng } from "../render/rasterize.js";
+import {
+  closeChromiumRasterizer,
+  rasterizeSvgToPngChromium,
+} from "../render/rasterize-chromium.js";
 
 const MODULE_DIR = dirname(fileURLToPath(import.meta.url));
 
@@ -104,10 +108,14 @@ async function renderDrawioToPng(
   outputPath: string,
   options?: RenderOptions,
   scale?: number,
+  renderer?: "resvg" | "chromium",
 ): Promise<void> {
   const converted = await convertWebpImagesToPng(drawioXml);
   const svg = renderDrawioToSvg(converted, options);
-  const png = rasterizeSvgToPng(svg, { scale });
+  const png =
+    renderer === "chromium"
+      ? await rasterizeSvgToPngChromium(svg, { scale })
+      : await rasterizeSvgToPng(svg, { scale });
   await writeRenderOutput("PNG", outputPath, png);
 }
 
@@ -133,6 +141,16 @@ async function renderDrawioToSvgFile(
  * (unless `--dry-run`) and prints statistics (PRD section 25).
  */
 export async function applyCommand(input: string, options: ApplyOptions): Promise<void> {
+  try {
+    await applyCommandInner(input, options);
+  } finally {
+    // Avoid leaving a hanging Node process from a launched Chromium
+    // instance (issue #34) when the chromium renderer was used.
+    if (options.renderer === "chromium") await closeChromiumRasterizer();
+  }
+}
+
+async function applyCommandInner(input: string, options: ApplyOptions): Promise<void> {
   let contents: string;
   try {
     contents = await readFile(input, "utf8");
@@ -152,7 +170,13 @@ export async function applyCommand(input: string, options: ApplyOptions): Promis
   });
 
   if (options.pngOriginal) {
-    await renderDrawioToPng(contents, options.pngOriginal, undefined, options.pngScale);
+    await renderDrawioToPng(
+      contents,
+      options.pngOriginal,
+      undefined,
+      options.pngScale,
+      options.renderer,
+    );
   }
   if (options.pngThemed) {
     const background = themeInput.tokens.background;
@@ -164,6 +188,7 @@ export async function applyCommand(input: string, options: ApplyOptions): Promis
         glow: themeInput.glow ? "filter" : "none",
       },
       options.pngScale,
+      options.renderer,
     );
   }
 
