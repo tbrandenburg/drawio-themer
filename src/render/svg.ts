@@ -444,6 +444,38 @@ function polygonPoints(points: Array<[number, number]>): string {
   return points.map(([px, py]) => `${px.toFixed(1)},${py.toFixed(1)}`).join(" ");
 }
 
+/**
+ * Builds a smooth SVG path `d` string through an already-routed point
+ * array (issue #53, sub-item 2a `curved=1`). Draw.io's `curved=1` smooths
+ * whatever points the edge style already produced (straight, orthogonal,
+ * or explicit waypoints) into a curve rather than sharp straight
+ * segments; this does NOT change routing/point-computation, only how the
+ * same points are painted. Uses quadratic Bezier segments through the
+ * midpoints between consecutive points (a common simple smoothing
+ * technique), with each original point as the control point pulling the
+ * curve toward it.
+ */
+function curvedPath(points: Array<[number, number]>): string {
+  const [firstX, firstY] = points[0]!;
+  if (points.length < 3) {
+    // Nothing to smooth with only 2 points; fall back to a straight
+    // single-segment path.
+    const [lastX, lastY] = points[points.length - 1]!;
+    return `M ${firstX.toFixed(1)} ${firstY.toFixed(1)} L ${lastX.toFixed(1)} ${lastY.toFixed(1)}`;
+  }
+  const segments: string[] = [`M ${firstX.toFixed(1)} ${firstY.toFixed(1)}`];
+  for (let i = 1; i < points.length - 1; i++) {
+    const [cx, cy] = points[i]!;
+    const [nx, ny] = points[i + 1]!;
+    const midX = (cx + nx) / 2;
+    const midY = (cy + ny) / 2;
+    segments.push(`Q ${cx.toFixed(1)} ${cy.toFixed(1)} ${midX.toFixed(1)} ${midY.toFixed(1)}`);
+  }
+  const [lastX, lastY] = points[points.length - 1]!;
+  segments.push(`L ${lastX.toFixed(1)} ${lastY.toFixed(1)}`);
+  return segments.join(" ");
+}
+
 function escapeXml(text: string): string {
   return text
     .replace(/&/g, "&amp;")
@@ -1630,13 +1662,17 @@ function renderPage(
     const markerAttrs =
       `${startMarker ? ` marker-start="url(#${startMarker})"` : ""}` +
       `${endMarker ? ` marker-end="url(#${endMarker})"` : ""}`;
+    const isCurved = style.properties.curved === "1";
     const shape =
-      waypoints.length > 0
-        ? `<polyline points="${polygonPoints(allPoints)}" fill="none" stroke="${stroke}" ` +
+      isCurved && allPoints.length >= 2
+        ? `<path d="${curvedPath(allPoints)}" fill="none" stroke="${stroke}" ` +
           `stroke-width="${strokeWidth}" stroke-opacity="${strokeOpacity}"${dashArray}${markerAttrs}/>`
-        : `<line x1="${p1x.toFixed(1)}" y1="${p1y.toFixed(1)}" x2="${p2x.toFixed(1)}" ` +
-          `y2="${p2y.toFixed(1)}" stroke="${stroke}" stroke-width="${strokeWidth}" ` +
-          `stroke-opacity="${strokeOpacity}"${dashArray}${markerAttrs}/>`;
+        : waypoints.length > 0
+          ? `<polyline points="${polygonPoints(allPoints)}" fill="none" stroke="${stroke}" ` +
+            `stroke-width="${strokeWidth}" stroke-opacity="${strokeOpacity}"${dashArray}${markerAttrs}/>`
+          : `<line x1="${p1x.toFixed(1)}" y1="${p1y.toFixed(1)}" x2="${p2x.toFixed(1)}" ` +
+            `y2="${p2y.toFixed(1)}" stroke="${stroke}" stroke-width="${strokeWidth}" ` +
+            `stroke-opacity="${strokeOpacity}"${dashArray}${markerAttrs}/>`;
     if (edgeId) {
       svgById.set(edgeId, glow === "filter" ? `<g filter="url(#softGlow)">${shape}</g>` : shape);
     }

@@ -646,6 +646,37 @@ describe("renderDrawioToSvg", () => {
     expect(svg).not.toMatch(/<line x1=/);
   });
 
+  it("renders an edge with curved=1 and explicit waypoints as a smoothed <path>, not a straight <polyline> (issue #53, 2a)", () => {
+    const xml = drawio(
+      '<mxCell id="0"/><mxCell id="1" parent="0"/>' +
+        '<mxCell id="n1" style="" vertex="1" parent="1"><mxGeometry x="0" y="0" width="100" height="100" as="geometry"/></mxCell>' +
+        '<mxCell id="n2" style="" vertex="1" parent="1"><mxGeometry x="300" y="300" width="100" height="100" as="geometry"/></mxCell>' +
+        '<mxCell id="e1" style="strokeColor=#000000;curved=1;" edge="1" parent="1" source="n1" target="n2">' +
+        '<mxGeometry relative="1" as="geometry"><Array as="points">' +
+        '<mxPoint x="200" y="50"/></Array></mxGeometry></mxCell>',
+    );
+
+    const svg = renderDrawioToSvg(xml);
+
+    expect(svg).toContain("<path d=");
+    expect(svg).toMatch(/<path d="[^"]*Q [^"]*"/);
+    expect(svg).not.toContain("<polyline");
+  });
+
+  it("renders an edge with curved=1 but no waypoints as a valid line/path, without crashing (issue #53, 2a)", () => {
+    const xml = drawio(
+      '<mxCell id="0"/><mxCell id="1" parent="0"/>' +
+        '<mxCell id="n1" style="" vertex="1" parent="1"><mxGeometry x="0" y="0" width="100" height="100" as="geometry"/></mxCell>' +
+        '<mxCell id="n2" style="" vertex="1" parent="1"><mxGeometry x="300" y="300" width="100" height="100" as="geometry"/></mxCell>' +
+        '<mxCell id="e1" style="strokeColor=#000000;curved=1;" edge="1" parent="1" source="n1" target="n2">' +
+        '<mxGeometry relative="1" as="geometry"/></mxCell>',
+    );
+
+    const svg = renderDrawioToSvg(xml);
+
+    expect(svg).toMatch(/<path d="M [\d.]+ [\d.]+ L [\d.]+ [\d.]+"/);
+  });
+
   it("clips an edge endpoint to the target ellipse's real perimeter, not its bbox corner (issue #35)", () => {
     const xml = drawio(
       '<mxCell id="0"/><mxCell id="1" parent="0"/>' +
