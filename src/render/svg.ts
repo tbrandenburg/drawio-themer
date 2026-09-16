@@ -643,6 +643,215 @@ export async function convertWebpImagesToPng(drawioXml: string): Promise<string>
 }
 
 /**
+ * Marker shape geometry, expressed as unscaled (scale=1) point lists so
+ * `markerDefString` below can uniformly scale any kind by an edge's
+ * `strokeWidth`/`startSize`/`endSize` (issue #53, 2d) without a
+ * per-kind special case.
+ */
+type MarkerShape =
+  | { readonly kind: "polygon"; readonly points: readonly (readonly [number, number])[] }
+  | { readonly kind: "polyline"; readonly points: readonly (readonly [number, number])[] }
+  | { readonly kind: "circle"; readonly cx: number; readonly cy: number; readonly r: number }
+  | { readonly kind: "cross"; readonly size: number };
+
+interface MarkerKindDef {
+  readonly w: number;
+  readonly h: number;
+  readonly refX: number;
+  readonly refY: number;
+  readonly shape: MarkerShape;
+}
+
+/**
+ * Marker "kinds" this renderer knows how to paint, mapped from mxgraph's
+ * `startArrow`/`endArrow` style values by `markerKindFor` in `renderPage`
+ * (issue #53, 2c: mxgraph's `mxMarker.js` registers 20+ marker types;
+ * this covers a reasonably broad subset). Geometry loosely mirrors real
+ * draw.io's shapes (concave-back "block" vs. flat-back "classic"
+ * triangle, unfilled "open" chevrons, one-sided "async", "cross") well
+ * enough to be visually distinct, without reproducing mxMarker.js's
+ * exact paint code.
+ */
+const MARKER_KINDS: Record<string, MarkerKindDef> = {
+  arrow: {
+    w: 10,
+    h: 10,
+    refX: 8,
+    refY: 3,
+    shape: {
+      kind: "polygon",
+      points: [
+        [0, 0],
+        [0, 6],
+        [9, 3],
+      ],
+    },
+  },
+  classicThin: {
+    w: 10,
+    h: 6,
+    refX: 8,
+    refY: 3,
+    shape: {
+      kind: "polygon",
+      points: [
+        [0, 1.5],
+        [0, 4.5],
+        [9, 3],
+      ],
+    },
+  },
+  block: {
+    w: 10,
+    h: 10,
+    refX: 8,
+    refY: 3,
+    shape: {
+      kind: "polygon",
+      points: [
+        [0, 0],
+        [9, 3],
+        [0, 6],
+        [2.5, 3],
+      ],
+    },
+  },
+  blockThin: {
+    w: 10,
+    h: 6,
+    refX: 8,
+    refY: 3,
+    shape: {
+      kind: "polygon",
+      points: [
+        [0, 1.5],
+        [9, 3],
+        [0, 4.5],
+        [2, 3],
+      ],
+    },
+  },
+  open: {
+    w: 10,
+    h: 10,
+    refX: 8,
+    refY: 3,
+    shape: {
+      kind: "polyline",
+      points: [
+        [0, 0],
+        [9, 3],
+        [0, 6],
+      ],
+    },
+  },
+  openThin: {
+    w: 10,
+    h: 6,
+    refX: 8,
+    refY: 3,
+    shape: {
+      kind: "polyline",
+      points: [
+        [0, 1],
+        [9, 3],
+        [0, 5],
+      ],
+    },
+  },
+  async: {
+    w: 10,
+    h: 6,
+    refX: 8,
+    refY: 3,
+    shape: {
+      kind: "polygon",
+      points: [
+        [0, 3],
+        [9, 0],
+        [9, 3],
+      ],
+    },
+  },
+  cross: {
+    w: 8,
+    h: 8,
+    refX: 4,
+    refY: 4,
+    shape: { kind: "cross", size: 8 },
+  },
+  diamond: {
+    w: 12,
+    h: 8,
+    refX: 10,
+    refY: 4,
+    shape: {
+      kind: "polygon",
+      points: [
+        [0, 4],
+        [6, 0],
+        [12, 4],
+        [6, 8],
+      ],
+    },
+  },
+  oval: {
+    w: 8,
+    h: 8,
+    refX: 6,
+    refY: 4,
+    shape: { kind: "circle", cx: 4, cy: 4, r: 3.5 },
+  },
+};
+
+/**
+ * Marker kinds that keep reusing the pre-existing static `#arrow`/
+ * `#diamond`/`#oval` ids (and their `Start` variants) from
+ * `renderDrawioToSvg`'s `<defs>` at scale 1, so existing callers/tests
+ * referencing those literal ids stay unaffected. Every other kind, and
+ * every scale != 1 (issue #53, 2d), gets its own generated def via
+ * `ensureMarkerId` in `renderPage`.
+ */
+const LEGACY_MARKER_IDS: Record<string, { start: string; end: string }> = {
+  arrow: { start: "arrowStart", end: "arrow" },
+  diamond: { start: "diamondStart", end: "diamond" },
+  oval: { start: "ovalStart", end: "oval" },
+};
+
+/** Renders one `<marker>` def string for a kind/scale/direction combination. */
+function markerDefString(
+  id: string,
+  kindDef: MarkerKindDef,
+  scale: number,
+  reverse: boolean,
+): string {
+  const w = (kindDef.w * scale).toFixed(2);
+  const h = (kindDef.h * scale).toFixed(2);
+  const refX = (kindDef.refX * scale).toFixed(2);
+  const refY = (kindDef.refY * scale).toFixed(2);
+  const orient = reverse ? "auto-start-reverse" : "auto";
+  const shape = kindDef.shape;
+  let body: string;
+  if (shape.kind === "polygon") {
+    const pts = shape.points.map(([x, y]) => `${(x * scale).toFixed(2)},${(y * scale).toFixed(2)}`);
+    body = `<path d="M${pts.join(" L")} Z" fill="#888"/>`;
+  } else if (shape.kind === "polyline") {
+    const pts = shape.points.map(([x, y]) => `${(x * scale).toFixed(2)},${(y * scale).toFixed(2)}`);
+    body = `<path d="M${pts.join(" L")}" fill="none" stroke="#888" stroke-width="${(1.5 * scale).toFixed(2)}"/>`;
+  } else if (shape.kind === "circle") {
+    body =
+      `<circle cx="${(shape.cx * scale).toFixed(2)}" cy="${(shape.cy * scale).toFixed(2)}" ` +
+      `r="${(shape.r * scale).toFixed(2)}" fill="#888"/>`;
+  } else {
+    const s = (shape.size * scale).toFixed(2);
+    body =
+      `<path d="M0,0 L${s},${s} M0,${s} L${s},0" stroke="#888" ` +
+      `stroke-width="${(1.5 * scale).toFixed(2)}" fill="none"/>`;
+  }
+  return `<marker id="${id}" markerWidth="${w}" markerHeight="${h}" refX="${refX}" refY="${refY}" orient="${orient}">${body}</marker>`;
+}
+
+/**
  * Renders the first page of a `.drawio` document as an approximate SVG,
  * reusing the document model (handles both inline and compressed page
  * content transparently).
@@ -658,6 +867,7 @@ function renderPage(
   glow: GlowMode,
   defs: string[],
   gradientIds: Map<string, string>,
+  markerIds: Map<string, string>,
 ): { nodeSvg: string[]; edgeSvg: string[]; width: number; height: number } {
   const modelDoc = new DOMParser().parseFromString(modelXml, "text/xml");
   const root = modelDoc.documentElement as unknown as XmlElement;
@@ -1124,19 +1334,79 @@ function renderPage(
   }
 
   /**
+   * mxgraph (`mxMarker.js`) scales an edge's arrowhead by the edge's own
+   * `strokeWidth`, and overrides the base size with the `startSize`/
+   * `endSize` style properties (default base unit 6) when present
+   * (issue #53, 2d). A thick-stroke edge therefore renders a
+   * proportionally larger arrowhead than a thin one with the same marker
+   * type.
+   */
+  function markerScale(style: ReturnType<typeof parseStyle>, end: "start" | "end"): number {
+    const strokeWidth = Number.parseFloat(style.properties.strokeWidth ?? "1");
+    const widthScale = Number.isNaN(strokeWidth) ? 1 : Math.max(0.5, strokeWidth);
+    const sizeProp = end === "start" ? style.properties.startSize : style.properties.endSize;
+    if (sizeProp === undefined) return widthScale;
+    const size = Number.parseFloat(sizeProp);
+    if (Number.isNaN(size) || size <= 0) return widthScale;
+    return widthScale * (size / 6);
+  }
+
+  /**
+   * Maps a draw.io `startArrow`/`endArrow` style value to one of the
+   * marker "kinds" this renderer knows how to paint (issue #53, 2c).
+   * mxgraph (`mxMarker.js`) registers 20+ marker types; this covers a
+   * reasonably broad subset - any unrecognized/absent value falls back
+   * to the plain "classic" arrow, matching the pre-existing behavior.
+   */
+  function markerKindFor(value: string): string {
+    if (value.startsWith("diamond")) return "diamond";
+    if (value === "oval") return "oval";
+    if (MARKER_KINDS[value]) return value;
+    return "arrow";
+  }
+
+  /**
+   * Returns (creating on first use) the `<marker>` def id for a given
+   * marker kind/end/scale combination, following the same
+   * cache-then-push-into-`defs` pattern `gradientFor` above uses for
+   * gradient ids. Scale-1 classic/diamond/oval markers keep reusing the
+   * pre-existing static ids from `renderDrawioToSvg`'s `<defs>` so
+   * existing callers/tests referencing `#arrow`/`#arrowStart`/etc. are
+   * unaffected; every other kind/scale combination gets its own
+   * generated def, uniquely keyed like the gradient ids are.
+   */
+  function ensureMarkerId(kind: string, scale: number, reverse: boolean): string {
+    const legacy = LEGACY_MARKER_IDS[kind];
+    if (legacy && Math.abs(scale - 1) < 0.001) {
+      return reverse ? legacy.start : legacy.end;
+    }
+    const key = `${kind}|${reverse ? "start" : "end"}|${scale.toFixed(2)}`;
+    const existing = markerIds.get(key);
+    if (existing) return existing;
+    const id = `mk${markerIds.size}`;
+    markerIds.set(key, id);
+    const kindDef = MARKER_KINDS[kind] ?? MARKER_KINDS.arrow!;
+    defs.push(markerDefString(id, kindDef, scale, reverse));
+    return id;
+  }
+
+  /**
    * Maps a draw.io `startArrow`/`endArrow` style value to the matching
-   * marker id defined in `renderDrawioToSvg`'s `<defs>`, or `undefined`
+   * marker id, generating a size-scaled def on demand, or `undefined`
    * when the edge explicitly has no arrowhead at that end (`none`).
    * `endArrow` defaults to a classic arrowhead when unset (matching real
    * draw.io); `startArrow` defaults to no arrowhead when unset.
    */
-  function arrowMarkerId(kind: string | undefined, end: "start" | "end"): string | undefined {
+  function arrowMarkerId(
+    kind: string | undefined,
+    end: "start" | "end",
+    style: ReturnType<typeof parseStyle>,
+  ): string | undefined {
     const resolved = kind ?? (end === "end" ? "classic" : "none");
     if (resolved === "none") return undefined;
-    const suffix = end === "start" ? "Start" : "";
-    if (resolved.startsWith("diamond")) return `diamond${suffix}`;
-    if (resolved === "oval") return `oval${suffix}`;
-    return `arrow${suffix}`;
+    const markerKind = markerKindFor(resolved);
+    const scale = markerScale(style, end);
+    return ensureMarkerId(markerKind, scale, end === "start");
   }
 
   const edgeSvg: string[] = [];
@@ -1155,8 +1425,8 @@ function renderPage(
     const strokeWidth = Number.parseFloat(style.properties.strokeWidth ?? "1");
     const dashArray = dashArrayAttr(style);
     const { stroke: strokeOpacity } = opacities(style);
-    const startMarker = arrowMarkerId(style.properties.startArrow, "start");
-    const endMarker = arrowMarkerId(style.properties.endArrow, "end");
+    const startMarker = arrowMarkerId(style.properties.startArrow, "start", style);
+    const endMarker = arrowMarkerId(style.properties.endArrow, "end", style);
     const markerAttrs =
       `${startMarker ? ` marker-start="url(#${startMarker})"` : ""}` +
       `${endMarker ? ` marker-end="url(#${endMarker})"` : ""}`;
@@ -1752,12 +2022,13 @@ export function renderDrawioToSvg(drawioXml: string, options: RenderOptions = {}
     );
   }
   const gradientIds = new Map<string, string>();
+  const markerIds = new Map<string, string>();
 
   let canvasWidth = 0;
   let yOffset = 0;
   const pageGroups: string[] = [];
   for (const modelXml of modelXmls) {
-    const page = renderPage(modelXml, glow, defs, gradientIds);
+    const page = renderPage(modelXml, glow, defs, gradientIds, markerIds);
     canvasWidth = Math.max(canvasWidth, page.width);
     const translate = yOffset === 0 ? "" : ` transform="translate(0,${yOffset})"`;
     pageGroups.push(`<g${translate}>${[...page.edgeSvg, ...page.nodeSvg].join("\n")}</g>`);
