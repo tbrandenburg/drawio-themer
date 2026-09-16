@@ -319,13 +319,23 @@ function wrapLabel(label: string, width: number, fontSize: string, bold = false)
       continue;
     }
 
-    const words = paragraph.split(" ");
+    // Tokenize each word further at internal hyphens (keeping the hyphen
+    // attached to the preceding fragment), so a single space-free
+    // hyphenated compound like "Human-On-The-Loop" still offers soft-wrap
+    // points, matching real draw.io's text layout (issue #41).
+    const tokens: { text: string; spaceBefore: boolean }[] = [];
+    for (const word of paragraph.split(" ")) {
+      const parts = word.split(/(?<=-)/);
+      parts.forEach((part, idx) => tokens.push({ text: part, spaceBefore: idx === 0 }));
+    }
+
     let current = "";
-    for (const word of words) {
-      const candidate = current ? `${current} ${word}` : word;
+    for (const token of tokens) {
+      const separator = token.spaceBefore && current ? " " : "";
+      const candidate = `${current}${separator}${token.text}`;
       if (estimateTextWidth(candidate, size, bold) > width && current) {
         wrapped.push(current);
-        current = word;
+        current = token.text;
       } else {
         current = candidate;
       }
@@ -379,6 +389,7 @@ function parseHtmlLabelLines(html: string): HtmlLabelLine[] {
   const rawLines = html
     .replace(/<br\s*\/?>/gi, "\u0000")
     .replace(/<\/(div|p|li)>/gi, "\u0000")
+    .replace(/\n/g, "\u0000")
     .split("\u0000");
 
   const lines: HtmlLabelLine[] = [];
@@ -1061,6 +1072,46 @@ function renderPage(
       cellSvg.push(
         glow === "filter" ? `<g filter="url(#softGlow)">${hexagon}</g>${hexagon}` : hexagon,
       );
+    } else if (
+      isContainer(cell) &&
+      (Number.parseFloat(style.properties.startSize ?? "0") || 0) > 0
+    ) {
+      // Real draw.io's mxSwimlane only fills the title-bar strip
+      // (startSize-wide/tall) with `fillColor`; the body region past it is
+      // left unfilled (page background shows through) unless the style
+      // explicitly sets `swimlaneFillColor` (issue #42, mxSwimlane.js
+      // `apply()`/`paintRoundedSwimlane()`). Only the outer corners of each
+      // region are rounded in real draw.io - the seam between title and
+      // body is a straight internal edge - but this offline renderer
+      // reuses the single `rx` computed above on both rects for
+      // simplicity, matching this project's documented "approximate, not
+      // pixel-perfect" rendering tradeoffs.
+      const startSize = Math.max(0, Number.parseFloat(style.properties.startSize ?? "0") || 0);
+      const rotatedTitle = style.properties.horizontal === "0";
+      const titleW = rotatedTitle ? Math.min(startSize, w) : w;
+      const titleH = rotatedTitle ? h : Math.min(startSize, h);
+      const bodyFill = style.properties.swimlaneFillColor;
+      const bodyFillRef =
+        bodyFill === undefined
+          ? "none"
+          : glow === "filter"
+            ? `url(#${gradientFor(bodyFill)})`
+            : bodyFill;
+      const titleRect =
+        `<rect x="${x}" y="${y}" width="${titleW}" height="${titleH}" rx="${rx}" ` +
+        `fill="${fillRef}" fill-opacity="${fillOpacity}" stroke="${stroke}" ` +
+        `stroke-width="${strokeWidth}" stroke-opacity="${strokeOpacity}"${dashArray}/>`;
+      const bodyRect = rotatedTitle
+        ? `<rect x="${x + titleW}" y="${y}" width="${w - titleW}" height="${h}" rx="${rx}" ` +
+          `fill="${bodyFillRef}" fill-opacity="${fillOpacity}" stroke="${stroke}" ` +
+          `stroke-width="${strokeWidth}" stroke-opacity="${strokeOpacity}"${dashArray}/>`
+        : `<rect x="${x}" y="${y + titleH}" width="${w}" height="${h - titleH}" rx="${rx}" ` +
+          `fill="${bodyFillRef}" fill-opacity="${fillOpacity}" stroke="${stroke}" ` +
+          `stroke-width="${strokeWidth}" stroke-opacity="${strokeOpacity}"${dashArray}/>`;
+      cellSvg.push(
+        glow === "filter" ? `<g filter="url(#softGlow)">${titleRect}</g>${titleRect}` : titleRect,
+      );
+      cellSvg.push(bodyRect);
     } else {
       const rect =
         `<rect x="${x}" y="${y}" width="${w}" height="${h}" rx="${rx}" ` +
