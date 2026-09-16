@@ -167,6 +167,19 @@ describe("renderDrawioToSvg", () => {
     expect(svg).toContain('rx="15"');
   });
 
+  it("defaults a plain rounded=1 rect with no arcSize to RECTANGLE_ROUNDING_FACTOR*min(w,h) instead of 0 (issue #54)", () => {
+    const xml = drawio(
+      '<mxCell id="0"/><mxCell id="1" parent="0"/>' +
+        '<mxCell id="n1" value="Box" style="rounded=1;" ' +
+        'vertex="1" parent="1"><mxGeometry x="0" y="0" width="100" height="70" as="geometry"/></mxCell>',
+    );
+
+    const svg = renderDrawioToSvg(xml);
+
+    // 0.15 * min(100,70)=70 = 10.5, matching real draw.io's default arc.
+    expect(svg).toContain('rx="10.5"');
+  });
+
   it("keeps square corners for a swimlane container without rounded=1 (issue #39)", () => {
     const xml = drawio(
       '<mxCell id="0"/><mxCell id="1" parent="0"/>' +
@@ -261,6 +274,31 @@ describe("renderDrawioToSvg", () => {
 
     expect(svg).toContain('<rect x="0" y="0" width="200" height="100"');
     expect(svg).not.toContain('fill="none"');
+  });
+
+  it("renders a divider line in separatorColor at the swimlane title/body seam when set (issue #58, 7a)", () => {
+    const xml = drawio(
+      '<mxCell id="0"/><mxCell id="1" parent="0"/>' +
+        '<mxCell id="lane" value="Lane" ' +
+        'style="swimlane;startSize=40;fillColor=#fafafa;separatorColor=#ff0000;horizontal=1;" ' +
+        'vertex="1" parent="1"><mxGeometry x="0" y="0" width="300" height="200" as="geometry"/></mxCell>',
+    );
+
+    const svg = renderDrawioToSvg(xml);
+
+    expect(svg).toContain('<line x1="0" y1="40" x2="300" y2="40" stroke="#ff0000"');
+  });
+
+  it("does not render a divider line for a swimlane without separatorColor set (issue #58, 7a, no regression)", () => {
+    const xml = drawio(
+      '<mxCell id="0"/><mxCell id="1" parent="0"/>' +
+        '<mxCell id="lane" value="Lane" style="swimlane;startSize=40;fillColor=#fafafa;horizontal=1;" ' +
+        'vertex="1" parent="1"><mxGeometry x="0" y="0" width="300" height="200" as="geometry"/></mxCell>',
+    );
+
+    const svg = renderDrawioToSvg(xml);
+
+    expect(svg).not.toContain("<line");
   });
 
   it("appends the font fallback stack to whatever fontFamily the theme sets", () => {
@@ -486,6 +524,87 @@ describe("renderDrawioToSvg", () => {
     expect(svg).not.toMatch(/<rect x="0" y="0"/);
   });
 
+  it("renders shape=triangle as a triangular <polygon>, not a generic rect (issue #52)", () => {
+    const xml = drawio(
+      '<mxCell id="0"/><mxCell id="1" parent="0"/>' +
+        '<mxCell id="n1" value="Cond" style="shape=triangle;fillColor=#dae8fc;strokeColor=#6c8ebf;" ' +
+        'vertex="1" parent="1"><mxGeometry x="0" y="0" width="80" height="40" as="geometry"/></mxCell>',
+    );
+
+    const svg = renderDrawioToSvg(xml);
+
+    expect(svg).toMatch(/<polygon points="0\.0,0\.0 80\.0,20\.0 0\.0,40\.0"/);
+    expect(svg).not.toMatch(/<rect x="0" y="0"/);
+  });
+
+  it("renders shape=parallelogram as a skewed <polygon>, not a generic rect (issue #52)", () => {
+    const xml = drawio(
+      '<mxCell id="0"/><mxCell id="1" parent="0"/>' +
+        '<mxCell id="n1" value="Input" style="shape=parallelogram;fillColor=#d5e8d4;strokeColor=#82b366;" ' +
+        'vertex="1" parent="1"><mxGeometry x="0" y="0" width="80" height="40" as="geometry"/></mxCell>',
+    );
+
+    const svg = renderDrawioToSvg(xml);
+
+    expect(svg).toMatch(/<polygon points="16\.0,0\.0 80\.0,0\.0 64\.0,40\.0 0\.0,40\.0"/);
+    expect(svg).not.toMatch(/<rect x="0" y="0"/);
+  });
+
+  it("renders shape=trapezoid as a trapezoidal <polygon>, not a generic rect (issue #52)", () => {
+    const xml = drawio(
+      '<mxCell id="0"/><mxCell id="1" parent="0"/>' +
+        '<mxCell id="n1" value="Manual" style="shape=trapezoid;fillColor=#ffe6cc;strokeColor=#d79b00;" ' +
+        'vertex="1" parent="1"><mxGeometry x="0" y="0" width="80" height="40" as="geometry"/></mxCell>',
+    );
+
+    const svg = renderDrawioToSvg(xml);
+
+    expect(svg).toMatch(/<polygon points="16\.0,0\.0 64\.0,0\.0 80\.0,40\.0 0\.0,40\.0"/);
+    expect(svg).not.toMatch(/<rect x="0" y="0"/);
+  });
+
+  it("renders shape=step as a chevron/notched <polygon>, not a generic rect (issue #52)", () => {
+    const xml = drawio(
+      '<mxCell id="0"/><mxCell id="1" parent="0"/>' +
+        '<mxCell id="n1" value="Step" style="shape=step;fillColor=#e1d5e7;strokeColor=#9673a6;" ' +
+        'vertex="1" parent="1"><mxGeometry x="0" y="0" width="80" height="40" as="geometry"/></mxCell>',
+    );
+
+    const svg = renderDrawioToSvg(xml);
+
+    expect(svg).toMatch(
+      /<polygon points="0\.0,0\.0 64\.0,0\.0 80\.0,20\.0 64\.0,40\.0 0\.0,40\.0 16\.0,20\.0"/,
+    );
+    expect(svg).not.toMatch(/<rect x="0" y="0"/);
+  });
+
+  it("renders shape=cube as three beveled-face <polygon>s, not a generic rect (issue #52)", () => {
+    const xml = drawio(
+      '<mxCell id="0"/><mxCell id="1" parent="0"/>' +
+        '<mxCell id="n1" value="Storage" style="shape=cube;fillColor=#f5f5f5;strokeColor=#666666;" ' +
+        'vertex="1" parent="1"><mxGeometry x="0" y="0" width="80" height="40" as="geometry"/></mxCell>',
+    );
+
+    const svg = renderDrawioToSvg(xml);
+
+    const polygonCount = (svg.match(/<polygon/g) ?? []).length;
+    expect(polygonCount).toBe(3);
+    expect(svg).not.toMatch(/<rect x="0" y="0"/);
+  });
+
+  it("renders shape=actor as a stick-figure silhouette <path>, not a generic rect (issue #52)", () => {
+    const xml = drawio(
+      '<mxCell id="0"/><mxCell id="1" parent="0"/>' +
+        '<mxCell id="n1" value="User" style="shape=actor;fillColor=#dae8fc;strokeColor=#6c8ebf;" ' +
+        'vertex="1" parent="1"><mxGeometry x="0" y="0" width="30" height="60" as="geometry"/></mxCell>',
+    );
+
+    const svg = renderDrawioToSvg(xml);
+
+    expect(svg).toMatch(/<path d="M 0,60 C /);
+    expect(svg).not.toMatch(/<rect x="0" y="0"/);
+  });
+
   it("routes an edge with explicit mxPoint waypoints as a polyline through those points", () => {
     const xml = drawio(
       '<mxCell id="0"/><mxCell id="1" parent="0"/>' +
@@ -671,6 +790,32 @@ describe("renderDrawioToSvg", () => {
 
     expect(svg).toContain(">PageOneNode<");
     expect(svg).toContain(">PageTwoNode<");
+  });
+
+  it("uses a page's pageColor attribute as that page's background instead of the global default (issue #58, 7b)", () => {
+    const xml =
+      '<mxfile host="test"><diagram id="p1" name="Page-1">' +
+      '<mxGraphModel pageColor="#001122"><root>' +
+      '<mxCell id="0"/><mxCell id="1" parent="0"/>' +
+      '<mxCell id="n1" value="Node" style="" vertex="1" parent="1">' +
+      '<mxGeometry x="0" y="0" width="100" height="50" as="geometry"/></mxCell>' +
+      "</root></mxGraphModel></diagram></mxfile>";
+
+    const svg = renderDrawioToSvg(xml);
+
+    expect(svg).toContain('fill="#001122"');
+  });
+
+  it("keeps the global background default for a page without a pageColor attribute (issue #58, 7b, no regression)", () => {
+    const xml = drawio(
+      '<mxCell id="0"/><mxCell id="1" parent="0"/>' +
+        '<mxCell id="n1" value="Node" style="" vertex="1" parent="1">' +
+        '<mxGeometry x="0" y="0" width="100" height="50" as="geometry"/></mxCell>',
+    );
+
+    const svg = renderDrawioToSvg(xml);
+
+    expect(svg).toMatch(/<rect width="\d+" height="\d+" fill="#ffffff"\/>/);
   });
 
   it("wraps a long label onto multiple lines when whiteSpace=wrap is set", () => {
@@ -914,6 +1059,80 @@ describe("renderDrawioToSvg", () => {
     expect(svg).toContain('marker-start="url(#arrowStart)"');
   });
 
+  function edgeSvgWithArrow(endArrow: string, extra = "") {
+    const xml = drawio(
+      '<mxCell id="0"/><mxCell id="1" parent="0"/>' +
+        '<mxCell id="n1" style="" vertex="1" parent="1"><mxGeometry x="0" y="0" width="50" height="50" as="geometry"/></mxCell>' +
+        '<mxCell id="n2" style="" vertex="1" parent="1"><mxGeometry x="200" y="0" width="50" height="50" as="geometry"/></mxCell>' +
+        `<mxCell id="e1" style="endArrow=${endArrow};${extra}" edge="1" parent="1" source="n1" target="n2">` +
+        '<mxGeometry relative="1" as="geometry"/></mxCell>',
+    );
+    return renderDrawioToSvg(xml);
+  }
+
+  it.each([
+    ["classicThin", /<path d="M0\.00,1\.50 L0\.00,4\.50 L9\.00,3\.00 Z"/],
+    ["block", /<path d="M0\.00,0\.00 L9\.00,3\.00 L0\.00,6\.00 L2\.50,3\.00 Z"/],
+    ["blockThin", /<path d="M0\.00,1\.50 L9\.00,3\.00 L0\.00,4\.50 L2\.00,3\.00 Z"/],
+    ["open", /<path d="M0\.00,0\.00 L9\.00,3\.00 L0\.00,6\.00" fill="none"/],
+    ["openThin", /<path d="M0\.00,1\.00 L9\.00,3\.00 L0\.00,5\.00" fill="none"/],
+    ["async", /<path d="M0\.00,3\.00 L9\.00,0\.00 L9\.00,3\.00 Z"/],
+    ["cross", /<path d="M0,0 L8\.00,8\.00 M0,8\.00 L8\.00,0"/],
+  ])(
+    "supports the %s marker as a distinct, referenced <marker> def (issue #53, 2c)",
+    (name, pathRe) => {
+      const svg = edgeSvgWithArrow(name);
+      expect(svg).toMatch(pathRe);
+      const idMatch = svg.match(/marker-end="url\(#(\w+)\)"/);
+      expect(idMatch).not.toBeNull();
+      const id = idMatch![1];
+      expect(svg).toContain(`<marker id="${id}"`);
+    },
+  );
+
+  it("falls back to the default classic arrow for an unrecognized endArrow value", () => {
+    const svg = edgeSvgWithArrow("totallyUnknownMarkerType");
+    expect(svg).toContain('marker-end="url(#arrow)"');
+  });
+
+  it("scales the arrowhead marker size up for a thicker-stroke edge (issue #53, 2d)", () => {
+    const xml = drawio(
+      '<mxCell id="0"/><mxCell id="1" parent="0"/>' +
+        '<mxCell id="n1" style="" vertex="1" parent="1"><mxGeometry x="0" y="0" width="50" height="50" as="geometry"/></mxCell>' +
+        '<mxCell id="n2" style="" vertex="1" parent="1"><mxGeometry x="200" y="0" width="50" height="50" as="geometry"/></mxCell>' +
+        '<mxCell id="n3" style="" vertex="1" parent="1"><mxGeometry x="0" y="100" width="50" height="50" as="geometry"/></mxCell>' +
+        '<mxCell id="n4" style="" vertex="1" parent="1"><mxGeometry x="200" y="100" width="50" height="50" as="geometry"/></mxCell>' +
+        '<mxCell id="e1" style="endArrow=block;strokeWidth=1;" edge="1" parent="1" source="n1" target="n2">' +
+        '<mxGeometry relative="1" as="geometry"/></mxCell>' +
+        '<mxCell id="e2" style="endArrow=block;strokeWidth=4;" edge="1" parent="1" source="n3" target="n4">' +
+        '<mxGeometry relative="1" as="geometry"/></mxCell>',
+    );
+    const svg = renderDrawioToSvg(xml);
+
+    const ids = [...svg.matchAll(/marker-end="url\(#(\w+)\)"/g)].map((m) => m[1]);
+    expect(ids).toHaveLength(2);
+    expect(ids[0]).not.toBe(ids[1]);
+
+    const widthOf = (id: string) =>
+      Number.parseFloat(
+        svg.match(new RegExp(`<marker id="${id}"[^>]*>`))![0].match(/markerWidth="([\d.]+)"/)![1],
+      );
+    expect(widthOf(ids[1]!)).toBeGreaterThan(widthOf(ids[0]!));
+  });
+
+  it("scales the arrowhead marker size via the endSize style property", () => {
+    const base = edgeSvgWithArrow("block", "strokeWidth=1;");
+    const bigger = edgeSvgWithArrow("block", "strokeWidth=1;endSize=12;");
+
+    const baseId = base.match(/marker-end="url\(#(\w+)\)"/)![1];
+    const biggerId = bigger.match(/marker-end="url\(#(\w+)\)"/)![1];
+    const baseDef = base.match(new RegExp(`<marker id="${baseId}"[^>]*>`))![0];
+    const biggerDef = bigger.match(new RegExp(`<marker id="${biggerId}"[^>]*>`))![0];
+    const baseWidth = Number.parseFloat(baseDef.match(/markerWidth="([\d.]+)"/)![1]);
+    const biggerWidth = Number.parseFloat(biggerDef.match(/markerWidth="([\d.]+)"/)![1]);
+    expect(biggerWidth).toBeGreaterThan(baseWidth);
+  });
+
   it("does not render a cell with visible=0", () => {
     const xml = drawio(
       '<mxCell id="0"/><mxCell id="1" parent="0"/>' +
@@ -1024,7 +1243,12 @@ describe("renderDrawioToSvg", () => {
 
     const svg = renderDrawioToSvg(xml);
 
-    expect(svg).toContain(">Bold &amp; safe<");
+    // Since issue #56, a nested `<b>` is honored as a styled run (not
+    // flattened away) rather than stripped to plain text - only the raw
+    // tag markup itself and the entity encoding are what get "stripped"/
+    // decoded here.
+    expect(svg).toMatch(/<tspan font-weight="bold">Bold<\/tspan>/);
+    expect(svg).toContain("&amp; safe");
     expect(svg).not.toContain("&lt;b&gt;");
   });
 
@@ -1044,6 +1268,42 @@ describe("renderDrawioToSvg", () => {
     expect(textElements[0]?.[1]).toBe("1 Experience Layer");
     expect(textElements[1]?.[0]).not.toContain('font-weight="bold"');
     expect(textElements[1]?.[1]).toBe("Natural and flexible ways to work");
+  });
+
+  it("bullet-prefixes each <li> line from a <ul> list in an html=1 label (issue #56)", () => {
+    const xml = drawio(
+      '<mxCell id="0"/><mxCell id="1" parent="0"/>' +
+        '<mxCell id="n1" value="&lt;ul&gt;&lt;li&gt;a&lt;/li&gt;&lt;li&gt;b&lt;/li&gt;&lt;/ul&gt;" ' +
+        'style="html=1;" vertex="1" parent="1">' +
+        '<mxGeometry x="0" y="0" width="100" height="50" as="geometry"/></mxCell>',
+    );
+
+    const svg = renderDrawioToSvg(xml);
+    const textElements = [...svg.matchAll(/<text[^>]*>([^<]*)<\/text>/g)];
+
+    expect(textElements).toHaveLength(2);
+    expect(textElements[0]?.[1]).toBe("\u2022 a");
+    expect(textElements[1]?.[1]).toBe("\u2022 b");
+    expect(svg).not.toContain("<li>");
+    expect(svg).not.toContain("<ul>");
+  });
+
+  it("applies both bold and italic to a nested <b><i>x</i></b> mid-line run without styling sibling text (issue #56)", () => {
+    const xml = drawio(
+      '<mxCell id="0"/><mxCell id="1" parent="0"/>' +
+        '<mxCell id="n1" value="before &lt;b&gt;&lt;i&gt;x&lt;/i&gt;&lt;/b&gt; after" ' +
+        'style="html=1;" vertex="1" parent="1">' +
+        '<mxGeometry x="0" y="0" width="100" height="50" as="geometry"/></mxCell>',
+    );
+
+    const svg = renderDrawioToSvg(xml);
+
+    const boldItalicRun = /<tspan font-weight="bold" font-style="italic">x<\/tspan>/;
+    expect(svg).toMatch(boldItalicRun);
+    // Sibling text in the same line stays unstyled (no font-weight/style
+    // attributes on its own tspan).
+    expect(svg).toMatch(/<tspan>before <\/tspan>/);
+    expect(svg).toMatch(/<tspan> after<\/tspan>/);
   });
 
   it("positions an edge-label child cell along the edge's real path instead of at (0,0) (issue #14)", () => {
@@ -1344,5 +1604,103 @@ describe("renderDrawioToSvg gradientColor/gradientDirection", () => {
 
     expect(svg).not.toContain("<linearGradient");
     expect(svg).toContain('fill="#ff0000"');
+  });
+
+  it("resolves fontColor=default to the ambient default instead of emitting the literal string (issue #54)", () => {
+    const xml = drawio(
+      '<mxCell id="0"/><mxCell id="1" parent="0"/>' +
+        '<mxCell id="n1" value="Box" style="fontColor=default;" ' +
+        'vertex="1" parent="1"><mxGeometry x="0" y="0" width="80" height="40" as="geometry"/></mxCell>',
+    );
+
+    const svg = renderDrawioToSvg(xml);
+
+    expect(svg).not.toContain("default");
+    expect(svg).toContain('fill="#000000"');
+  });
+
+  it("resolves strokeColor=default to the ambient default instead of emitting the literal string (issue #54)", () => {
+    const xml = drawio(
+      '<mxCell id="0"/><mxCell id="1" parent="0"/>' +
+        '<mxCell id="n1" value="Box" style="strokeColor=default;" ' +
+        'vertex="1" parent="1"><mxGeometry x="0" y="0" width="80" height="40" as="geometry"/></mxCell>',
+    );
+
+    const svg = renderDrawioToSvg(xml);
+
+    expect(svg).not.toContain("default");
+    expect(svg).toContain('stroke="#000000"');
+  });
+
+  it("defaults a missing fontSize to 11 (mxgraph's DEFAULT_FONTSIZE), not 12 (issue #54)", () => {
+    const xml = drawio(
+      '<mxCell id="0"/><mxCell id="1" parent="0"/>' +
+        '<mxCell id="n1" value="Box" style="" ' +
+        'vertex="1" parent="1"><mxGeometry x="0" y="0" width="80" height="40" as="geometry"/></mxCell>',
+    );
+
+    const svg = renderDrawioToSvg(xml);
+
+    expect(svg).toContain('font-size="11"');
+  });
+});
+
+describe("label positioning and clipping (issue #55)", () => {
+  it("places a verticalLabelPosition=bottom label below the shape's box, not centered inside it", () => {
+    const defaultXml = drawio(
+      '<mxCell id="0"/><mxCell id="1" parent="0"/>' +
+        '<mxCell id="n1" value="Box" style="" ' +
+        'vertex="1" parent="1"><mxGeometry x="0" y="0" width="80" height="40" as="geometry"/></mxCell>',
+    );
+    const externalXml = drawio(
+      '<mxCell id="0"/><mxCell id="1" parent="0"/>' +
+        '<mxCell id="n1" value="Box" style="verticalLabelPosition=bottom;" ' +
+        'vertex="1" parent="1"><mxGeometry x="0" y="0" width="80" height="40" as="geometry"/></mxCell>',
+    );
+
+    const defaultY = Number(renderDrawioToSvg(defaultXml).match(/<text[^>]* y="([\d.-]+)"/)?.[1]);
+    const externalY = Number(renderDrawioToSvg(externalXml).match(/<text[^>]* y="([\d.-]+)"/)?.[1]);
+
+    // Box is y=0..40; a centered label's baseline sits inside that range,
+    // an external bottom label's baseline must sit below the box (> 40).
+    expect(defaultY).toBeLessThan(40);
+    expect(externalY).toBeGreaterThan(40);
+  });
+
+  it("places a labelPosition=right label to the right of the shape's box", () => {
+    const xml = drawio(
+      '<mxCell id="0"/><mxCell id="1" parent="0"/>' +
+        '<mxCell id="n1" value="Box" style="labelPosition=right;" ' +
+        'vertex="1" parent="1"><mxGeometry x="0" y="0" width="80" height="40" as="geometry"/></mxCell>',
+    );
+
+    const svg = renderDrawioToSvg(xml);
+    const textX = Number(svg.match(/<text[^>]* x="([\d.-]+)"/)?.[1]);
+
+    expect(textX).toBeGreaterThan(80);
+    expect(svg).toContain('text-anchor="start"');
+  });
+
+  it("truncates/clips a clipped=1 label instead of auto-wrapping it to more lines", () => {
+    const longLabel = "A very long label that would normally wrap onto several lines of text";
+    const wrappedXml = drawio(
+      `<mxCell id="0"/><mxCell id="1" parent="0"/>` +
+        `<mxCell id="n1" value="${longLabel}" style="whiteSpace=wrap;" ` +
+        'vertex="1" parent="1"><mxGeometry x="0" y="0" width="80" height="40" as="geometry"/></mxCell>',
+    );
+    const clippedXml = drawio(
+      `<mxCell id="0"/><mxCell id="1" parent="0"/>` +
+        `<mxCell id="n1" value="${longLabel}" style="whiteSpace=wrap;clipped=1;" ` +
+        'vertex="1" parent="1"><mxGeometry x="0" y="0" width="80" height="40" as="geometry"/></mxCell>',
+    );
+
+    const wrappedLineCount = [...renderDrawioToSvg(wrappedXml).matchAll(/<text[^>]*>/g)].length;
+    const clippedSvg = renderDrawioToSvg(clippedXml);
+    const clippedLineCount = [...clippedSvg.matchAll(/<text[^>]*>/g)].length;
+
+    expect(wrappedLineCount).toBeGreaterThan(1);
+    expect(clippedLineCount).toBe(1);
+    expect(clippedSvg).toContain("<clipPath");
+    expect(clippedSvg).toContain("clip-path=");
   });
 });

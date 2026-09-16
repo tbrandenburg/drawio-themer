@@ -35,6 +35,19 @@ export const FONT_FALLBACK_STACK = "Noto Sans, Helvetica Neue, Arial, sans-serif
 // label lines at ~1.2x the cell's fontSize, not a fixed pixel constant
 // (issue #47).
 const LINE_HEIGHT_FACTOR = 1.2;
+// mxRectangleShape's RECTANGLE_ROUNDING_FACTOR: a plain rounded=1 rect
+// with no explicit arcSize defaults its corner radius to this fraction
+// of min(w,h) (issue #54).
+const RECTANGLE_ROUNDING_FACTOR = 0.15;
+// mxConstants.DEFAULT_FONTSIZE: draw.io's default font size for cells
+// with no explicit fontSize (issue #54).
+const DEFAULT_FONT_SIZE = "11";
+// mxText's updateBoundingBox() moves the label's bounding box entirely
+// outside the shape's own geometry (not just re-aligned inside it) once
+// labelPosition/verticalLabelPosition is set to a non-default value;
+// this is the small gap left between the shape's edge and the label
+// (issue #55).
+const LABEL_POSITION_GAP = 4;
 
 /** Whether to draw a soft glow behind nodes/edges using a real SVG `<filter>`. */
 export type GlowMode = "none" | "filter";
@@ -103,6 +116,14 @@ function numAttr(el: XmlElement, name: string, fallback = 0): number {
   return Number.isNaN(parsed) ? fallback : parsed;
 }
 
+// mxgraph treats the literal style value "default" for color properties
+// (e.g. fontColor=default, strokeColor=default) as equivalent to the
+// property being absent entirely, not as a literal CSS color keyword
+// (issue #54) - resolve it to the same fallback used when unset.
+function resolveColor(value: string | undefined, fallback: string): string {
+  return value === undefined || value === "default" ? fallback : value;
+}
+
 function lighten(hexColor: string, amount = 14): string {
   const h = hexColor.replace(/^#/, "");
   if (h.length !== 6) return hexColor;
@@ -110,6 +131,19 @@ function lighten(hexColor: string, amount = 14): string {
   const g = Number.parseInt(h.slice(2, 4), 16);
   const b = Number.parseInt(h.slice(4, 6), 16);
   const clamp = (c: number) => Math.min(255, c + amount);
+  return `#${[r, g, b]
+    .map(clamp)
+    .map((c) => c.toString(16).padStart(2, "0"))
+    .join("")}`;
+}
+
+function darken(hexColor: string, amount = 14): string {
+  const h = hexColor.replace(/^#/, "");
+  if (h.length !== 6) return hexColor;
+  const r = Number.parseInt(h.slice(0, 2), 16);
+  const g = Number.parseInt(h.slice(2, 4), 16);
+  const b = Number.parseInt(h.slice(4, 6), 16);
+  const clamp = (c: number) => Math.max(0, c - amount);
   return `#${[r, g, b]
     .map(clamp)
     .map((c) => c.toString(16).padStart(2, "0"))
@@ -236,6 +270,123 @@ function hexagonPoints(x: number, y: number, w: number, h: number): Array<[numbe
 }
 
 /**
+ * The triangle outline for `shape=triangle` cells (issue #52, 1b), matching
+ * mxTriangle.js's default `direction=east`: apex on the right edge,
+ * vertical base on the left.
+ */
+function trianglePoints(x: number, y: number, w: number, h: number): Array<[number, number]> {
+  return [
+    [x, y],
+    [x + w, y + h / 2],
+    [x, y + h],
+  ];
+}
+
+/**
+ * The parallelogram outline for `shape=parallelogram` cells (issue #52,
+ * 1b), matching mxParallelogram.js's default ~20%-of-width skew on the
+ * top/bottom edges.
+ */
+function parallelogramPoints(x: number, y: number, w: number, h: number): Array<[number, number]> {
+  const skew = Math.min(w * 0.2, w / 2);
+  return [
+    [x + skew, y],
+    [x + w, y],
+    [x + w - skew, y + h],
+    [x, y + h],
+  ];
+}
+
+/**
+ * The trapezoid outline for `shape=trapezoid` cells (issue #52, 1b),
+ * matching mxTrapezoid.js's default ~20%-of-width inset on the top edge
+ * (slanted left/right sides, flat top and bottom).
+ */
+function trapezoidPoints(x: number, y: number, w: number, h: number): Array<[number, number]> {
+  const inset = Math.min(w * 0.2, w / 2);
+  return [
+    [x + inset, y],
+    [x + w - inset, y],
+    [x + w, y + h],
+    [x, y + h],
+  ];
+}
+
+/**
+ * The step (chevron arrow) outline for `shape=step` cells (issue #52,
+ * 1b), matching mxStep.js's default ~20%-of-width notch on the left edge
+ * and point on the right edge.
+ */
+function stepPoints(x: number, y: number, w: number, h: number): Array<[number, number]> {
+  const inset = Math.min(w * 0.2, w / 2);
+  return [
+    [x, y],
+    [x + w - inset, y],
+    [x + w, y + h / 2],
+    [x + w - inset, y + h],
+    [x, y + h],
+    [x + inset, y + h / 2],
+  ];
+}
+
+/**
+ * The three beveled faces (front/top/side) mxgraph draws for `shape=cube`
+ * cells (issue #52, 1b), matching mxCube.js's fixed-ish bevel `size`
+ * (here capped like the cylinder cap so it doesn't grow unbounded on
+ * large boxes).
+ */
+function cubeFaces(
+  x: number,
+  y: number,
+  w: number,
+  h: number,
+): {
+  front: Array<[number, number]>;
+  top: Array<[number, number]>;
+  side: Array<[number, number]>;
+} {
+  const size = Math.min(20, w * 0.3, h * 0.3);
+  return {
+    front: [
+      [x, y + size],
+      [x + w - size, y + size],
+      [x + w - size, y + h],
+      [x, y + h],
+    ],
+    top: [
+      [x, y + size],
+      [x + size, y],
+      [x + w, y],
+      [x + w - size, y + size],
+    ],
+    side: [
+      [x + w - size, y + size],
+      [x + w, y],
+      [x + w, y + h - size],
+      [x + w - size, y + h],
+    ],
+  };
+}
+
+/**
+ * The stick-figure silhouette path mxgraph draws for `shape=actor` cells
+ * (issue #52, 1b), approximating mxActor.js's rounded-shoulder cubic-
+ * bezier outline (head/shoulders arc into a tapered body, no separate
+ * head circle - matches the real shape's single continuous path).
+ */
+function actorPath(x: number, y: number, w: number, h: number): string {
+  const pw = w / 3;
+  const ph = h / 3;
+  return (
+    `M ${x},${y + h} ` +
+    `C ${x},${y + h - ph * 1.7} ${x},${y + ph * 1.7} ${x + pw},${y + ph * 1.7} ` +
+    `C ${x + pw},${y + ph * 0.8} ${x + pw * 1.5},${y} ${x + w / 2},${y} ` +
+    `C ${x + w - pw * 1.5},${y} ${x + w - pw},${y + ph * 0.8} ${x + w - pw},${y + ph * 1.7} ` +
+    `C ${x + w},${y + ph * 1.7} ${x + w},${y + h - ph * 1.7} ${x + w},${y + h} Z`
+  );
+}
+
+/**
  * Clips an edge endpoint to a node's real perimeter (ellipse/rhombus/
  * hexagon), falling back to `clipToRect` for `"rect"` or any unhandled
  * shape (issue #35: `mxPerimeter.js`-equivalent perimeter math, replacing
@@ -312,7 +463,7 @@ function estimateTextWidth(text: string, size: number, bold = false): number {
 }
 
 function wrapLabel(label: string, width: number, fontSize: string, bold = false): string[] {
-  const size = Number.parseFloat(fontSize) || 12;
+  const size = Number.parseFloat(fontSize) || 11;
 
   const wrapped: string[] = [];
   for (const paragraph of label.split("\n")) {
@@ -360,19 +511,156 @@ function decodeHtmlEntities(text: string): string {
     .replace(/&#39;/g, "'");
 }
 
-/** One line of an `html=1` label, with an optional per-line bold/italic
- * override relative to the cell's own `fontStyle` baseline (issue #38). */
-interface HtmlLabelLine {
+/** One run of text within an `html=1` label line, with its own
+ * bold/italic flags from nested `<b>`/`<i>`/`<span>` tags (issue #56). */
+interface HtmlRun {
   text: string;
   bold?: boolean;
   italic?: boolean;
 }
 
+/** One line of an `html=1` label, with an optional per-line bold/italic
+ * override relative to the cell's own `fontStyle` baseline (issue #38).
+ * `runs` is only populated when the line contains more than one
+ * differently-styled inline run (nested `<b>`/`<i>`/`<span>`, issue #56);
+ * plain lines and full-line-span lines (issue #38) keep using the flat
+ * `text`/`bold`/`italic` fields so existing behavior is unchanged. */
+interface HtmlLabelLine {
+  text: string;
+  bold?: boolean;
+  italic?: boolean;
+  runs?: HtmlRun[];
+}
+
 // Matches a line whose *entire* content is wrapped in a single
-// `<span style="...">...</span>` - the line-level-only scope this issue
-// asks for (partial-line/mid-line multi-run spans are explicitly out of
-// scope, see issue #38's "Proposed fix").
+// `<span style="...">...</span>` - the line-level-only scope issue #38
+// asks for (partial-line/mid-line multi-run spans are handled separately
+// by `parseInlineRuns`, see issue #56).
 const FULL_LINE_SPAN = /^<span\s+style="([^"]*)"\s*>([\s\S]*)<\/span>$/i;
+
+// Tags that carry inline bold/italic styling; every other tag
+// (div/p/ul/li/...) is a structural no-op here since block splitting and
+// bullet-prefixing already happen before `parseInlineRuns` runs.
+function applyTagStyle(
+  tag: string,
+  token: string,
+  bold: boolean,
+  italic: boolean,
+): { bold: boolean; italic: boolean } {
+  if (tag === "b" || tag === "strong") return { bold: true, italic };
+  if (tag === "i" || tag === "em") return { bold, italic: true };
+  if (tag === "span") {
+    const styleMatch = /style="([^"]*)"/i.exec(token);
+    const styleStr = styleMatch?.[1] ?? "";
+    const boldMatch = /font-weight\s*:\s*(normal|bold)/i.exec(styleStr);
+    const italicMatch = /font-style\s*:\s*(normal|italic)/i.exec(styleStr);
+    return {
+      bold: boldMatch ? (boldMatch[1] ?? "").toLowerCase() === "bold" : bold,
+      italic: italicMatch ? (italicMatch[1] ?? "").toLowerCase() === "italic" : italic,
+    };
+  }
+  return { bold, italic };
+}
+
+/**
+ * Parses a single label line's inner markup into a flat list of styled
+ * text runs, honoring nested `<b>`/`<strong>`/`<i>`/`<em>`/`<span
+ * style="...">` combinations (e.g. `<b><i>x</i></b>` yields one run with
+ * both `bold` and `italic` set) while treating every other tag
+ * (`<ul>`/`<li>`/stray `<div>`/`<p>` remnants) as a no-op to strip
+ * (issue #56). This is deliberately not a general HTML parser: it has no
+ * notion of block layout, attributes beyond `style`, or malformed-markup
+ * recovery beyond "ignore an unmatched closing tag".
+ */
+function parseInlineRuns(content: string): HtmlRun[] {
+  const tokens = content.match(/<[^>]+>|[^<]+/g) ?? [];
+  const runs: HtmlRun[] = [];
+  const stack: { tag: string; prevBold: boolean; prevItalic: boolean }[] = [];
+  let bold = false;
+  let italic = false;
+
+  for (const token of tokens) {
+    if (!token.startsWith("<")) {
+      const text = decodeHtmlEntities(token);
+      if (text !== "") runs.push({ text, bold: bold || undefined, italic: italic || undefined });
+      continue;
+    }
+    const isClosing = token.startsWith("</");
+    const tag = (/^<\/?\s*([a-zA-Z][a-zA-Z0-9]*)/.exec(token)?.[1] ?? "").toLowerCase();
+    if (!tag) continue;
+
+    if (isClosing) {
+      const openIdx = stack.map((s) => s.tag).lastIndexOf(tag);
+      if (openIdx === -1) continue;
+      // Only restore state when closing the innermost open tag; a
+      // malformed/overlapping close is left as a no-op best-effort.
+      if (openIdx === stack.length - 1) {
+        const entry = stack[openIdx];
+        if (entry) {
+          bold = entry.prevBold;
+          italic = entry.prevItalic;
+        }
+      }
+      stack.splice(openIdx, 1);
+      continue;
+    }
+
+    const prevBold = bold;
+    const prevItalic = italic;
+    ({ bold, italic } = applyTagStyle(tag, token, bold, italic));
+    if (!/\/>$/.test(token)) stack.push({ tag, prevBold, prevItalic });
+  }
+
+  // Merge consecutive runs that ended up with identical styling (common
+  // case: a line with no nested tags at all) so callers can cheaply tell
+  // "one run" (flat line) apart from "genuinely multi-styled" (issue #56).
+  const merged: HtmlRun[] = [];
+  for (const run of runs) {
+    const last = merged[merged.length - 1];
+    if (last && !!last.bold === !!run.bold && !!last.italic === !!run.italic) {
+      last.text += run.text;
+    } else {
+      merged.push({ ...run });
+    }
+  }
+  if (merged.length > 0) {
+    const first = merged[0];
+    const lastEntry = merged[merged.length - 1];
+    if (first) first.text = first.text.replace(/^\s+/, "");
+    if (lastEntry) lastEntry.text = lastEntry.text.replace(/\s+$/, "");
+  }
+  return merged.filter((run) => run.text !== "");
+}
+
+const BULLET_MARKER = "\u0001";
+const BULLET_PREFIX = "\u2022 ";
+
+/**
+ * Slices a run list down to the `[start, end)` character range of their
+ * concatenated text (e.g. one width-wrapped sub-line's span within the
+ * original unwrapped line), splitting any run straddling a boundary.
+ * Used to keep per-run bold/italic (issue #56) intact across `wrapLabel`'s
+ * width-driven reflow of a multi-run line.
+ */
+function sliceRunsForRange(runs: HtmlRun[], start: number, end: number): HtmlRun[] {
+  const result: HtmlRun[] = [];
+  let pos = 0;
+  for (const run of runs) {
+    const runStart = pos;
+    const runEnd = pos + run.text.length;
+    pos = runEnd;
+    const sliceStart = Math.max(start, runStart);
+    const sliceEnd = Math.min(end, runEnd);
+    if (sliceStart < sliceEnd) {
+      result.push({
+        text: run.text.slice(sliceStart - runStart, sliceEnd - runStart),
+        bold: run.bold,
+        italic: run.italic,
+      });
+    }
+  }
+  return result;
+}
 
 /**
  * A label with `html=1` in its style stores real (draw.io-editor-authored)
@@ -389,9 +677,16 @@ const FULL_LINE_SPAN = /^<span\s+style="([^"]*)"\s*>([\s\S]*)<\/span>$/i;
  * heading) overrides the cell-level bold/italic for that line only
  * (issue #38) - the span tags themselves are stripped from the visible
  * text.
+ *
+ * Beyond that, nested inline tags within a line (`<b><i>x</i></b>`) are
+ * parsed into per-run bold/italic via `parseInlineRuns`, and `<li>`
+ * elements are bullet-prefixed with "\u2022 " (issue #56). Full arbitrary
+ * HTML/CSS layout (block nesting depth, floats, attributes beyond
+ * `style`) remains out of scope - see the PR description for #56.
  */
 function parseHtmlLabelLines(html: string): HtmlLabelLine[] {
   const rawLines = html
+    .replace(/<li[^>]*>/gi, BULLET_MARKER)
     .replace(/<br\s*\/?>/gi, "\u0000")
     .replace(/<\/(div|p|li)>/gi, "\u0000")
     .replace(/\n/g, "\u0000")
@@ -400,21 +695,42 @@ function parseHtmlLabelLines(html: string): HtmlLabelLine[] {
   const lines: HtmlLabelLine[] = [];
   for (const raw of rawLines) {
     const trimmed = raw.trim();
-    const spanMatch = FULL_LINE_SPAN.exec(trimmed);
-    let bold: boolean | undefined;
-    let italic: boolean | undefined;
-    const content = spanMatch ? (spanMatch[2] ?? "") : trimmed;
+    const isBullet = trimmed.includes(BULLET_MARKER);
+    const unmarked = isBullet ? trimmed.replaceAll(BULLET_MARKER, "") : trimmed;
+    const spanMatch = FULL_LINE_SPAN.exec(unmarked);
+
     if (spanMatch) {
+      // Full-line `<span>` override (issue #38): keep the existing flat
+      // text/bold/italic shape unchanged rather than routing it through
+      // `parseInlineRuns`, so that behavior stays exactly as before.
       const spanStyle = spanMatch[1] ?? "";
       const boldMatch = /font-weight\s*:\s*(normal|bold)/i.exec(spanStyle);
-      if (boldMatch) bold = (boldMatch[1] ?? "").toLowerCase() === "bold";
       const italicMatch = /font-style\s*:\s*(normal|italic)/i.exec(spanStyle);
-      if (italicMatch) italic = (italicMatch[1] ?? "").toLowerCase() === "italic";
+      const bold = boldMatch ? (boldMatch[1] ?? "").toLowerCase() === "bold" : undefined;
+      const italic = italicMatch ? (italicMatch[1] ?? "").toLowerCase() === "italic" : undefined;
+      const text = decodeHtmlEntities((spanMatch[2] ?? "").replace(/<[^>]+>/g, "")).trim();
+      if (text === "" && rawLines.length > 1) continue;
+      lines.push({ text: isBullet ? BULLET_PREFIX + text : text, bold, italic });
+      continue;
     }
 
-    const text = decodeHtmlEntities(content.replace(/<[^>]+>/g, "")).trim();
+    const runs = parseInlineRuns(unmarked);
+    if (isBullet) {
+      const firstRun = runs[0];
+      if (firstRun) firstRun.text = BULLET_PREFIX + firstRun.text;
+      else runs.push({ text: BULLET_PREFIX });
+    }
+    const text = runs
+      .map((run) => run.text)
+      .join("")
+      .trim();
     if (text === "" && rawLines.length > 1) continue;
-    lines.push({ text, bold, italic });
+
+    if (runs.length > 1) {
+      lines.push({ text, runs });
+    } else {
+      lines.push({ text, bold: runs[0]?.bold, italic: runs[0]?.italic });
+    }
   }
   return lines.length > 0 ? lines : [{ text: "" }];
 }
@@ -492,6 +808,215 @@ export async function convertWebpImagesToPng(drawioXml: string): Promise<string>
 }
 
 /**
+ * Marker shape geometry, expressed as unscaled (scale=1) point lists so
+ * `markerDefString` below can uniformly scale any kind by an edge's
+ * `strokeWidth`/`startSize`/`endSize` (issue #53, 2d) without a
+ * per-kind special case.
+ */
+type MarkerShape =
+  | { readonly kind: "polygon"; readonly points: readonly (readonly [number, number])[] }
+  | { readonly kind: "polyline"; readonly points: readonly (readonly [number, number])[] }
+  | { readonly kind: "circle"; readonly cx: number; readonly cy: number; readonly r: number }
+  | { readonly kind: "cross"; readonly size: number };
+
+interface MarkerKindDef {
+  readonly w: number;
+  readonly h: number;
+  readonly refX: number;
+  readonly refY: number;
+  readonly shape: MarkerShape;
+}
+
+/**
+ * Marker "kinds" this renderer knows how to paint, mapped from mxgraph's
+ * `startArrow`/`endArrow` style values by `markerKindFor` in `renderPage`
+ * (issue #53, 2c: mxgraph's `mxMarker.js` registers 20+ marker types;
+ * this covers a reasonably broad subset). Geometry loosely mirrors real
+ * draw.io's shapes (concave-back "block" vs. flat-back "classic"
+ * triangle, unfilled "open" chevrons, one-sided "async", "cross") well
+ * enough to be visually distinct, without reproducing mxMarker.js's
+ * exact paint code.
+ */
+const MARKER_KINDS: Record<string, MarkerKindDef> = {
+  arrow: {
+    w: 10,
+    h: 10,
+    refX: 8,
+    refY: 3,
+    shape: {
+      kind: "polygon",
+      points: [
+        [0, 0],
+        [0, 6],
+        [9, 3],
+      ],
+    },
+  },
+  classicThin: {
+    w: 10,
+    h: 6,
+    refX: 8,
+    refY: 3,
+    shape: {
+      kind: "polygon",
+      points: [
+        [0, 1.5],
+        [0, 4.5],
+        [9, 3],
+      ],
+    },
+  },
+  block: {
+    w: 10,
+    h: 10,
+    refX: 8,
+    refY: 3,
+    shape: {
+      kind: "polygon",
+      points: [
+        [0, 0],
+        [9, 3],
+        [0, 6],
+        [2.5, 3],
+      ],
+    },
+  },
+  blockThin: {
+    w: 10,
+    h: 6,
+    refX: 8,
+    refY: 3,
+    shape: {
+      kind: "polygon",
+      points: [
+        [0, 1.5],
+        [9, 3],
+        [0, 4.5],
+        [2, 3],
+      ],
+    },
+  },
+  open: {
+    w: 10,
+    h: 10,
+    refX: 8,
+    refY: 3,
+    shape: {
+      kind: "polyline",
+      points: [
+        [0, 0],
+        [9, 3],
+        [0, 6],
+      ],
+    },
+  },
+  openThin: {
+    w: 10,
+    h: 6,
+    refX: 8,
+    refY: 3,
+    shape: {
+      kind: "polyline",
+      points: [
+        [0, 1],
+        [9, 3],
+        [0, 5],
+      ],
+    },
+  },
+  async: {
+    w: 10,
+    h: 6,
+    refX: 8,
+    refY: 3,
+    shape: {
+      kind: "polygon",
+      points: [
+        [0, 3],
+        [9, 0],
+        [9, 3],
+      ],
+    },
+  },
+  cross: {
+    w: 8,
+    h: 8,
+    refX: 4,
+    refY: 4,
+    shape: { kind: "cross", size: 8 },
+  },
+  diamond: {
+    w: 12,
+    h: 8,
+    refX: 10,
+    refY: 4,
+    shape: {
+      kind: "polygon",
+      points: [
+        [0, 4],
+        [6, 0],
+        [12, 4],
+        [6, 8],
+      ],
+    },
+  },
+  oval: {
+    w: 8,
+    h: 8,
+    refX: 6,
+    refY: 4,
+    shape: { kind: "circle", cx: 4, cy: 4, r: 3.5 },
+  },
+};
+
+/**
+ * Marker kinds that keep reusing the pre-existing static `#arrow`/
+ * `#diamond`/`#oval` ids (and their `Start` variants) from
+ * `renderDrawioToSvg`'s `<defs>` at scale 1, so existing callers/tests
+ * referencing those literal ids stay unaffected. Every other kind, and
+ * every scale != 1 (issue #53, 2d), gets its own generated def via
+ * `ensureMarkerId` in `renderPage`.
+ */
+const LEGACY_MARKER_IDS: Record<string, { start: string; end: string }> = {
+  arrow: { start: "arrowStart", end: "arrow" },
+  diamond: { start: "diamondStart", end: "diamond" },
+  oval: { start: "ovalStart", end: "oval" },
+};
+
+/** Renders one `<marker>` def string for a kind/scale/direction combination. */
+function markerDefString(
+  id: string,
+  kindDef: MarkerKindDef,
+  scale: number,
+  reverse: boolean,
+): string {
+  const w = (kindDef.w * scale).toFixed(2);
+  const h = (kindDef.h * scale).toFixed(2);
+  const refX = (kindDef.refX * scale).toFixed(2);
+  const refY = (kindDef.refY * scale).toFixed(2);
+  const orient = reverse ? "auto-start-reverse" : "auto";
+  const shape = kindDef.shape;
+  let body: string;
+  if (shape.kind === "polygon") {
+    const pts = shape.points.map(([x, y]) => `${(x * scale).toFixed(2)},${(y * scale).toFixed(2)}`);
+    body = `<path d="M${pts.join(" L")} Z" fill="#888"/>`;
+  } else if (shape.kind === "polyline") {
+    const pts = shape.points.map(([x, y]) => `${(x * scale).toFixed(2)},${(y * scale).toFixed(2)}`);
+    body = `<path d="M${pts.join(" L")}" fill="none" stroke="#888" stroke-width="${(1.5 * scale).toFixed(2)}"/>`;
+  } else if (shape.kind === "circle") {
+    body =
+      `<circle cx="${(shape.cx * scale).toFixed(2)}" cy="${(shape.cy * scale).toFixed(2)}" ` +
+      `r="${(shape.r * scale).toFixed(2)}" fill="#888"/>`;
+  } else {
+    const s = (shape.size * scale).toFixed(2);
+    body =
+      `<path d="M0,0 L${s},${s} M0,${s} L${s},0" stroke="#888" ` +
+      `stroke-width="${(1.5 * scale).toFixed(2)}" fill="none"/>`;
+  }
+  return `<marker id="${id}" markerWidth="${w}" markerHeight="${h}" refX="${refX}" refY="${refY}" orient="${orient}">${body}</marker>`;
+}
+
+/**
  * Renders the first page of a `.drawio` document as an approximate SVG,
  * reusing the document model (handles both inline and compressed page
  * content transparently).
@@ -507,9 +1032,15 @@ function renderPage(
   glow: GlowMode,
   defs: string[],
   gradientIds: Map<string, string>,
-): { nodeSvg: string[]; edgeSvg: string[]; width: number; height: number } {
+  markerIds: Map<string, string>,
+): { nodeSvg: string[]; edgeSvg: string[]; width: number; height: number; background?: string } {
   const modelDoc = new DOMParser().parseFromString(modelXml, "text/xml");
   const root = modelDoc.documentElement as unknown as XmlElement;
+  // Per-page background color (issue #58, 7b): real draw.io stores this as
+  // a `pageColor` attribute on the `<mxGraphModel>` root element (the same
+  // attribute draw.io's own "Page Background" dialog writes) - falls back
+  // to the caller's global `options.background` default when absent.
+  const pageColor = root.getAttribute("pageColor") || undefined;
   const cells = childElements(root, "mxCell");
   const cellById = new Map<string, XmlElement>();
   for (const cell of cells) {
@@ -973,19 +1504,79 @@ function renderPage(
   }
 
   /**
+   * mxgraph (`mxMarker.js`) scales an edge's arrowhead by the edge's own
+   * `strokeWidth`, and overrides the base size with the `startSize`/
+   * `endSize` style properties (default base unit 6) when present
+   * (issue #53, 2d). A thick-stroke edge therefore renders a
+   * proportionally larger arrowhead than a thin one with the same marker
+   * type.
+   */
+  function markerScale(style: ReturnType<typeof parseStyle>, end: "start" | "end"): number {
+    const strokeWidth = Number.parseFloat(style.properties.strokeWidth ?? "1");
+    const widthScale = Number.isNaN(strokeWidth) ? 1 : Math.max(0.5, strokeWidth);
+    const sizeProp = end === "start" ? style.properties.startSize : style.properties.endSize;
+    if (sizeProp === undefined) return widthScale;
+    const size = Number.parseFloat(sizeProp);
+    if (Number.isNaN(size) || size <= 0) return widthScale;
+    return widthScale * (size / 6);
+  }
+
+  /**
+   * Maps a draw.io `startArrow`/`endArrow` style value to one of the
+   * marker "kinds" this renderer knows how to paint (issue #53, 2c).
+   * mxgraph (`mxMarker.js`) registers 20+ marker types; this covers a
+   * reasonably broad subset - any unrecognized/absent value falls back
+   * to the plain "classic" arrow, matching the pre-existing behavior.
+   */
+  function markerKindFor(value: string): string {
+    if (value.startsWith("diamond")) return "diamond";
+    if (value === "oval") return "oval";
+    if (MARKER_KINDS[value]) return value;
+    return "arrow";
+  }
+
+  /**
+   * Returns (creating on first use) the `<marker>` def id for a given
+   * marker kind/end/scale combination, following the same
+   * cache-then-push-into-`defs` pattern `gradientFor` above uses for
+   * gradient ids. Scale-1 classic/diamond/oval markers keep reusing the
+   * pre-existing static ids from `renderDrawioToSvg`'s `<defs>` so
+   * existing callers/tests referencing `#arrow`/`#arrowStart`/etc. are
+   * unaffected; every other kind/scale combination gets its own
+   * generated def, uniquely keyed like the gradient ids are.
+   */
+  function ensureMarkerId(kind: string, scale: number, reverse: boolean): string {
+    const legacy = LEGACY_MARKER_IDS[kind];
+    if (legacy && Math.abs(scale - 1) < 0.001) {
+      return reverse ? legacy.start : legacy.end;
+    }
+    const key = `${kind}|${reverse ? "start" : "end"}|${scale.toFixed(2)}`;
+    const existing = markerIds.get(key);
+    if (existing) return existing;
+    const id = `mk${markerIds.size}`;
+    markerIds.set(key, id);
+    const kindDef = MARKER_KINDS[kind] ?? MARKER_KINDS.arrow!;
+    defs.push(markerDefString(id, kindDef, scale, reverse));
+    return id;
+  }
+
+  /**
    * Maps a draw.io `startArrow`/`endArrow` style value to the matching
-   * marker id defined in `renderDrawioToSvg`'s `<defs>`, or `undefined`
+   * marker id, generating a size-scaled def on demand, or `undefined`
    * when the edge explicitly has no arrowhead at that end (`none`).
    * `endArrow` defaults to a classic arrowhead when unset (matching real
    * draw.io); `startArrow` defaults to no arrowhead when unset.
    */
-  function arrowMarkerId(kind: string | undefined, end: "start" | "end"): string | undefined {
+  function arrowMarkerId(
+    kind: string | undefined,
+    end: "start" | "end",
+    style: ReturnType<typeof parseStyle>,
+  ): string | undefined {
     const resolved = kind ?? (end === "end" ? "classic" : "none");
     if (resolved === "none") return undefined;
-    const suffix = end === "start" ? "Start" : "";
-    if (resolved.startsWith("diamond")) return `diamond${suffix}`;
-    if (resolved === "oval") return `oval${suffix}`;
-    return `arrow${suffix}`;
+    const markerKind = markerKindFor(resolved);
+    const scale = markerScale(style, end);
+    return ensureMarkerId(markerKind, scale, end === "start");
   }
 
   const edgeSvg: string[] = [];
@@ -1000,12 +1591,12 @@ function renderPage(
     const [p2x, p2y] = allPoints[allPoints.length - 1]!;
     const waypoints = allPoints.slice(1, -1);
 
-    const stroke = style.properties.strokeColor ?? "#000000";
+    const stroke = resolveColor(style.properties.strokeColor, "#000000");
     const strokeWidth = Number.parseFloat(style.properties.strokeWidth ?? "1");
     const dashArray = dashArrayAttr(style);
     const { stroke: strokeOpacity } = opacities(style);
-    const startMarker = arrowMarkerId(style.properties.startArrow, "start");
-    const endMarker = arrowMarkerId(style.properties.endArrow, "end");
+    const startMarker = arrowMarkerId(style.properties.startArrow, "start", style);
+    const endMarker = arrowMarkerId(style.properties.endArrow, "end", style);
     const markerAttrs =
       `${startMarker ? ` marker-start="url(#${startMarker})"` : ""}` +
       `${endMarker ? ` marker-end="url(#${endMarker})"` : ""}`;
@@ -1086,11 +1677,22 @@ function renderPage(
     // a spurious visible fill+stroke box that never appears in the real UI.
     if (style.tokens.includes("group") && style.properties.container !== "1") continue;
     const fill = style.properties.fillColor ?? "#ffffff";
-    const stroke = style.properties.strokeColor ?? "#000000";
-    const fontColor = style.properties.fontColor ?? "#000000";
+    const stroke = resolveColor(style.properties.strokeColor, "#000000");
+    const fontColor = resolveColor(style.properties.fontColor, "#000000");
     const strokeWidth = Number.parseFloat(style.properties.strokeWidth ?? "1");
+    // A plain `rounded=1` rect with no explicit `arcSize` defaults to
+    // `RECTANGLE_ROUNDING_FACTOR * min(w,h)` in real draw.io
+    // (mxRectangleShape.js), not to a 0px arc (issue #54).
+    const hasArcSize = "arcSize" in style.properties;
     const arc = Number.parseFloat(style.properties.arcSize ?? "0");
-    const flatRx = Number.isNaN(arc) ? 0 : arc <= 100 ? (arc * Math.min(w, h)) / 100 : arc;
+    const flatRx =
+      !hasArcSize && style.properties.rounded === "1"
+        ? RECTANGLE_ROUNDING_FACTOR * Math.min(w, h)
+        : Number.isNaN(arc)
+          ? 0
+          : arc <= 100
+            ? (arc * Math.min(w, h)) / 100
+            : arc;
     // mxSwimlane computes its corner arc as a function of the title bar
     // height (`startSize`), not as a flat percentage of the box like a
     // plain rounded rect - see mxgraph's mxSwimlane.getSwimlaneArcSize()
@@ -1109,6 +1711,16 @@ function renderPage(
     const isEllipse = shape === "ellipse" || style.tokens.includes("ellipse");
     const isRhombus = shape === "rhombus" || style.tokens.includes("rhombus");
     const isHexagon = shape === "hexagon";
+    // Core basic shapes (issue #52, 1b) - each a distinct mxgraph shape
+    // class (mxTriangle.js/mxParallelogram.js/mxTrapezoid.js/mxStep.js/
+    // mxCube.js/mxActor.js), not just a rect variant. Deliberately NOT
+    // resolving `shape=mxgraph.*` stencil paths here (issue #52, 1a).
+    const isTriangle = shape === "triangle";
+    const isParallelogram = shape === "parallelogram";
+    const isTrapezoid = shape === "trapezoid";
+    const isStep = shape === "step";
+    const isCube = shape === "cube";
+    const isActor = shape === "actor";
     // Matches `isText` in ../drawio/classifier.ts: a `text;`-styled cell
     // (draw.io's "Text" shape) always renders borderless/fill-less in real
     // draw.io, regardless of any strokeColor/fillColor left in its style
@@ -1125,9 +1737,14 @@ function renderPage(
       /^,\s*/,
       "",
     );
-    const fontSize = style.properties.fontSize ?? "12";
+    const fontSize = style.properties.fontSize ?? DEFAULT_FONT_SIZE;
     const valign = style.properties.verticalAlign ?? "middle";
     const align = style.properties.align ?? "center";
+    // labelPosition/verticalLabelPosition place the label entirely outside
+    // the shape's own box (e.g. an icon with a caption below it) instead
+    // of aligning it inside, when set to a non-default value (issue #55).
+    const labelPosition = style.properties.labelPosition ?? "center";
+    const verticalLabelPosition = style.properties.verticalLabelPosition ?? "middle";
     const spacingLeft = Number.parseFloat(style.properties.spacingLeft ?? "0") || 0;
     // horizontal=0 marks a rotated (vertical) swimlane title, typically a
     // side panel; its label runs bottom-to-top along the left edge
@@ -1143,7 +1760,20 @@ function renderPage(
       (isBold ? ' font-weight="bold"' : "") +
       (isItalic ? ' font-style="italic"' : "") +
       (isUnderline ? ' text-decoration="underline"' : "");
-    let textY = valign === "top" ? y + 18 : y + h / 2 + 5;
+    const fontSizeNum = Number.parseFloat(fontSize) || 11;
+    let textY: number;
+    if (verticalLabelPosition === "bottom") {
+      // Below the shape: baseline of the first line sits just past the
+      // box's bottom edge plus the gap, growing downward (not centered
+      // inside the box like the default).
+      textY = y + h + LABEL_POSITION_GAP + fontSizeNum;
+    } else if (verticalLabelPosition === "top") {
+      // Above the shape: baseline of the last line sits just before the
+      // box's top edge minus the gap, growing upward.
+      textY = y - LABEL_POSITION_GAP;
+    } else {
+      textY = valign === "top" ? y + 18 : y + h / 2 + 5;
+    }
     const gradientColor = style.properties.gradientColor;
     const gradientDirection = style.properties.gradientDirection ?? "south";
     const fillRef = gradientColor
@@ -1225,6 +1855,64 @@ function renderPage(
           glow === "filter" ? `<g filter="url(#softGlow)">${hexagon}</g>${hexagon}` : hexagon,
         ),
       );
+    } else if (isTriangle) {
+      const points = trianglePoints(x, y, w, h);
+      const triangle =
+        `<polygon points="${polygonPoints(points)}" fill="${fillRef}" fill-opacity="${fillOpacity}" ` +
+        `stroke="${stroke}" stroke-width="${strokeWidth}" stroke-opacity="${strokeOpacity}"${dashArray}/>`;
+      cellSvg.push(
+        withShadow(
+          glow === "filter" ? `<g filter="url(#softGlow)">${triangle}</g>${triangle}` : triangle,
+        ),
+      );
+    } else if (isParallelogram) {
+      const points = parallelogramPoints(x, y, w, h);
+      const parallelogram =
+        `<polygon points="${polygonPoints(points)}" fill="${fillRef}" fill-opacity="${fillOpacity}" ` +
+        `stroke="${stroke}" stroke-width="${strokeWidth}" stroke-opacity="${strokeOpacity}"${dashArray}/>`;
+      cellSvg.push(
+        withShadow(
+          glow === "filter"
+            ? `<g filter="url(#softGlow)">${parallelogram}</g>${parallelogram}`
+            : parallelogram,
+        ),
+      );
+    } else if (isTrapezoid || isStep) {
+      const points = isStep ? stepPoints(x, y, w, h) : trapezoidPoints(x, y, w, h);
+      const stepShape =
+        `<polygon points="${polygonPoints(points)}" fill="${fillRef}" fill-opacity="${fillOpacity}" ` +
+        `stroke="${stroke}" stroke-width="${strokeWidth}" stroke-opacity="${strokeOpacity}"${dashArray}/>`;
+      cellSvg.push(
+        withShadow(
+          glow === "filter" ? `<g filter="url(#softGlow)">${stepShape}</g>${stepShape}` : stepShape,
+        ),
+      );
+    } else if (isCube) {
+      const { front, top, side } = cubeFaces(x, y, w, h);
+      const isHexColor = /^#[0-9a-fA-F]{6}$/.test(fill);
+      const topFillRef = isHexColor ? lighten(fill, 20) : fillRef;
+      const sideFillRef = isHexColor ? darken(fill, 20) : fillRef;
+      const frontFace =
+        `<polygon points="${polygonPoints(front)}" fill="${fillRef}" fill-opacity="${fillOpacity}" ` +
+        `stroke="${stroke}" stroke-width="${strokeWidth}" stroke-opacity="${strokeOpacity}"${dashArray}/>`;
+      const topFace =
+        `<polygon points="${polygonPoints(top)}" fill="${topFillRef}" fill-opacity="${fillOpacity}" ` +
+        `stroke="${stroke}" stroke-width="${strokeWidth}" stroke-opacity="${strokeOpacity}"${dashArray}/>`;
+      const sideFace =
+        `<polygon points="${polygonPoints(side)}" fill="${sideFillRef}" fill-opacity="${fillOpacity}" ` +
+        `stroke="${stroke}" stroke-width="${strokeWidth}" stroke-opacity="${strokeOpacity}"${dashArray}/>`;
+      const cube = `${frontFace}${topFace}${sideFace}`;
+      cellSvg.push(
+        withShadow(glow === "filter" ? `<g filter="url(#softGlow)">${cube}</g>${cube}` : cube),
+      );
+    } else if (isActor) {
+      const d = actorPath(x, y, w, h);
+      const actor =
+        `<path d="${d}" fill="${fillRef}" fill-opacity="${fillOpacity}" ` +
+        `stroke="${stroke}" stroke-width="${strokeWidth}" stroke-opacity="${strokeOpacity}"${dashArray}/>`;
+      cellSvg.push(
+        withShadow(glow === "filter" ? `<g filter="url(#softGlow)">${actor}</g>${actor}` : actor),
+      );
     } else if (
       isContainer(cell) &&
       (Number.parseFloat(style.properties.startSize ?? "0") || 0) > 0
@@ -1305,6 +1993,19 @@ function renderPage(
         ),
       );
       cellSvg.push(withShadow(bodyRect));
+      // separatorColor (issue #58, 7a): an opt-in swimlane style property,
+      // distinct from the title/body seam-rounding fix (issue #50/#51) -
+      // draws an explicit divider line along that same title/body seam
+      // when set, in the given color (mxSwimlane.js paintDivider()).
+      const separatorColor = style.properties.separatorColor;
+      if (separatorColor && separatorColor !== "none") {
+        const separatorLine = rotatedTitle
+          ? `<line x1="${x + titleW}" y1="${y}" x2="${x + titleW}" y2="${y + h}" ` +
+            `stroke="${separatorColor}" stroke-width="${strokeWidth}"/>`
+          : `<line x1="${x}" y1="${y + titleH}" x2="${x + w}" y2="${y + titleH}" ` +
+            `stroke="${separatorColor}" stroke-width="${strokeWidth}"/>`;
+        cellSvg.push(separatorLine);
+      }
     } else {
       const rect =
         `<rect x="${x}" y="${y}" width="${w}" height="${h}" rx="${rx}" ` +
@@ -1315,10 +2016,29 @@ function renderPage(
       );
     }
 
-    const wrap = style.properties.whiteSpace === "wrap";
+    // clipped=1 tells real draw.io to crop overflowing text at the box
+    // boundary (DOM `overflow: hidden`) rather than reflow it into more
+    // wrapped lines - skip the auto-wrap path in that case and instead
+    // clip the rendered (unwrapped) label with an SVG clip-path below
+    // (issue #55).
+    const clipped = style.properties.clipped === "1";
+    const wrap = style.properties.whiteSpace === "wrap" && !clipped;
+    if (clipped && labelPosition === "center" && verticalLabelPosition === "middle") {
+      cellSvg.push(
+        `<clipPath id="clip-${id}"><rect x="${x}" y="${y}" width="${w}" height="${h}"/></clipPath>`,
+      );
+    }
+    interface RenderRun {
+      text: string;
+      fontAttrs: string;
+    }
     interface RenderLine {
       text: string;
       fontAttrs: string;
+      // Present only for lines with genuinely multi-styled inline runs
+      // (nested `<b>`/`<i>`/`<span>`, issue #56); rendered as sibling
+      // `<tspan>`s instead of a single flat `<text>` body.
+      runs?: RenderRun[];
     }
     const buildFontAttrs = (bold: boolean, italic: boolean): string =>
       (bold ? ' font-weight="bold"' : "") +
@@ -1335,6 +2055,25 @@ function renderPage(
         const bold = htmlLine.bold ?? isBold;
         const italic = htmlLine.italic ?? isItalic;
         const fontAttrs = buildFontAttrs(bold, italic);
+        if (htmlLine.runs && htmlLine.runs.length > 1) {
+          // Mid-line multi-run styling (issue #56): re-wrap by the flat
+          // concatenated text as usual, then re-slice the original runs
+          // to each wrapped sub-line's character range so bold/italic
+          // boundaries survive width-driven reflow.
+          const wrappedText = wrap ? wrapLabel(htmlLine.text, w, fontSize, bold) : [htmlLine.text];
+          let cursor = 0;
+          return wrappedText.map((text) => {
+            const idx = htmlLine.text.indexOf(text, cursor);
+            const start = idx >= 0 ? idx : cursor;
+            const end = start + text.length;
+            cursor = end;
+            const runs = sliceRunsForRange(htmlLine.runs ?? [], start, end).map((run) => ({
+              text: run.text,
+              fontAttrs: buildFontAttrs(run.bold ?? bold, run.italic ?? italic),
+            }));
+            return { text, fontAttrs, runs };
+          });
+        }
         const wrapped = wrap ? wrapLabel(htmlLine.text, w, fontSize, bold) : [htmlLine.text];
         return wrapped.map((text) => ({ text, fontAttrs }));
       });
@@ -1347,12 +2086,27 @@ function renderPage(
     // (rather than pinning the first line there and pushing later lines
     // further down), matching mxgraph's mxText.js block-centering for
     // verticalAlign=middle. Top-aligned labels grow downward as before.
-    const lineHeight = (Number.parseFloat(fontSize) || 12) * LINE_HEIGHT_FACTOR;
-    if (valign !== "top") {
+    // An external verticalLabelPosition=top block grows upward instead,
+    // so its last (not first) line lands at the computed textY.
+    const lineHeight = fontSizeNum * LINE_HEIGHT_FACTOR;
+    if (verticalLabelPosition === "top") {
+      textY -= (lines.length - 1) * lineHeight;
+    } else if (verticalLabelPosition === "middle" && valign !== "top") {
       textY -= ((lines.length - 1) * lineHeight) / 2;
     }
 
-    lines.forEach(({ text: line, fontAttrs: lineFontAttrs }, i) => {
+    // Renders a line's body as either plain escaped text or, when it
+    // carries multi-styled inline runs (issue #56), sibling `<tspan>`s
+    // each with their own bold/italic attributes.
+    const renderLineBody = (renderLine: RenderLine): string =>
+      renderLine.runs && renderLine.runs.length > 0
+        ? renderLine.runs
+            .map((run) => `<tspan${run.fontAttrs}>${escapeXml(run.text)}</tspan>`)
+            .join("")
+        : escapeXml(renderLine.text);
+
+    lines.forEach((renderLine, i) => {
+      const { fontAttrs: lineFontAttrs } = renderLine;
       if (rotatedLabel) {
         // Rotate about the label's own anchor point so it reads
         // bottom-to-top along the left edge, matching draw.io's
@@ -1366,14 +2120,20 @@ function renderPage(
         cellSvg.push(
           `<text x="${px.toFixed(1)}" y="${py.toFixed(1)}" text-anchor="middle" ` +
             `font-family="${fontFamily}" font-size="${fontSize}" fill="${fontColor}"${lineFontAttrs} ` +
-            `transform="rotate(-90 ${px.toFixed(1)} ${py.toFixed(1)})">${escapeXml(line)}</text>`,
+            `transform="rotate(-90 ${px.toFixed(1)} ${py.toFixed(1)})">${renderLineBody(renderLine)}</text>`,
         );
         return;
       }
 
       let textX = x + w / 2;
       let textAnchor = "middle";
-      if (align === "left") {
+      if (labelPosition === "left") {
+        textX = x - LABEL_POSITION_GAP;
+        textAnchor = "end";
+      } else if (labelPosition === "right") {
+        textX = x + w + LABEL_POSITION_GAP;
+        textAnchor = "start";
+      } else if (align === "left") {
         textX = x + 4 + spacingLeft;
         textAnchor = "start";
       } else if (align === "right") {
@@ -1381,9 +2141,16 @@ function renderPage(
         textAnchor = "end";
       }
 
-      cellSvg.push(
+      const text =
         `<text x="${textX}" y="${textY + i * lineHeight}" text-anchor="${textAnchor}" ` +
-          `font-family="${fontFamily}" font-size="${fontSize}" fill="${fontColor}"${lineFontAttrs}>${escapeXml(line)}</text>`,
+        `font-family="${fontFamily}" font-size="${fontSize}" fill="${fontColor}"${lineFontAttrs}>${renderLineBody(renderLine)}</text>`;
+      // clipped=1 crops overflowing text at the box boundary rather than
+      // reflowing it (issue #55) - only meaningful when the label still
+      // sits inside the shape's own geometry (the default labelPosition).
+      cellSvg.push(
+        clipped && labelPosition === "center" && verticalLabelPosition === "middle"
+          ? `<g clip-path="url(#clip-${id})">${text}</g>`
+          : text,
       );
     });
 
@@ -1420,7 +2187,7 @@ function renderPage(
   const diagramWidth = Math.max(modelPageWidth, bboxRight ? bboxRight + margin : 0) || 850;
   const diagramHeight = Math.max(modelPageHeight, bboxBottom ? bboxBottom + margin : 0) || 700;
 
-  return { nodeSvg, edgeSvg, width: diagramWidth, height: diagramHeight };
+  return { nodeSvg, edgeSvg, width: diagramWidth, height: diagramHeight, background: pageColor };
 }
 
 /** Gap in px drawn between stacked pages when a document has more than one. */
@@ -1476,15 +2243,26 @@ export function renderDrawioToSvg(drawioXml: string, options: RenderOptions = {}
     );
   }
   const gradientIds = new Map<string, string>();
+  const markerIds = new Map<string, string>();
 
   let canvasWidth = 0;
   let yOffset = 0;
   const pageGroups: string[] = [];
   for (const modelXml of modelXmls) {
-    const page = renderPage(modelXml, glow, defs, gradientIds);
+    const page = renderPage(modelXml, glow, defs, gradientIds, markerIds);
     canvasWidth = Math.max(canvasWidth, page.width);
     const translate = yOffset === 0 ? "" : ` transform="translate(0,${yOffset})"`;
-    pageGroups.push(`<g${translate}>${[...page.edgeSvg, ...page.nodeSvg].join("\n")}</g>`);
+    // A page's own `pageColor` (issue #58, 7b) overrides the global
+    // `background` default for just that page's band, painted as its own
+    // rect before that page's node/edge content.
+    const pageBackground = page.background
+      ? [
+          `<rect x="0" y="0" width="${page.width}" height="${page.height}" fill="${page.background}"/>`,
+        ]
+      : [];
+    pageGroups.push(
+      `<g${translate}>${[...pageBackground, ...page.edgeSvg, ...page.nodeSvg].join("\n")}</g>`,
+    );
     yOffset += page.height + PAGE_GAP;
   }
   const canvasHeight = yOffset > 0 ? yOffset - PAGE_GAP : 0;
