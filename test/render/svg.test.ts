@@ -580,6 +580,36 @@ describe("renderDrawioToSvg", () => {
     expect(textCount).toBeGreaterThan(1);
   });
 
+  it("preserves a manual line break in a non-wrapped html=1 label (issue #41)", () => {
+    const xml = drawio(
+      '<mxCell id="0"/><mxCell id="1" parent="0"/>' +
+        '<mxCell id="n1" value="ONE PLATFORM&#xa;GREATER POSSIBILITIES" ' +
+        'style="text;html=1;align=center;verticalAlign=middle;fontSize=11;fontColor=#63738A;" ' +
+        'vertex="1" parent="1">' +
+        '<mxGeometry x="70" y="820" width="210" height="50" as="geometry"/></mxCell>',
+    );
+
+    const svg = renderDrawioToSvg(xml);
+
+    const textElements = [...svg.matchAll(/<text[^>]*>([^<]*)<\/text>/g)].map((m) => m[1]);
+    expect(textElements).toEqual(["ONE PLATFORM", "GREATER POSSIBILITIES"]);
+  });
+
+  it("wraps a hyphenated word with no spaces after a hyphen (issue #41)", () => {
+    const xml = drawio(
+      '<mxCell id="0"/><mxCell id="1" parent="0"/>' +
+        '<mxCell id="n1" value="Human-&lt;i&gt;On&lt;/i&gt;-The-Loop" ' +
+        'style="rounded=1;whiteSpace=wrap;html=1;fontStyle=1;fontFamily=Helvetica;fontSize=14;" ' +
+        'vertex="1" parent="1">' +
+        '<mxGeometry x="0" y="0" width="100" height="70" as="geometry"/></mxCell>',
+    );
+
+    const svg = renderDrawioToSvg(xml);
+
+    const textCount = (svg.match(/<text /g) ?? []).length;
+    expect(textCount).toBeGreaterThan(1);
+  });
+
   it("does not wrap a label when whiteSpace=wrap is absent, even if it overflows", () => {
     const xml = drawio(
       '<mxCell id="0"/><mxCell id="1" parent="0"/>' +
