@@ -17,6 +17,7 @@
  */
 import { DOMParser } from "@xmldom/xmldom";
 import type { Element as XmlElement } from "@xmldom/xmldom";
+import sharp from "sharp";
 import { getPages, loadDrawioDocument } from "../drawio/document.js";
 import { parseStyle } from "../drawio/styles.js";
 
@@ -198,6 +199,61 @@ function normalizeDataUri(uri: string): string {
   if (!match) return uri;
   const [, mime, payload] = match;
   return `data:${mime};base64,${payload}`;
+}
+
+/**
+ * Matches an embedded `image=data:image/webp...` data URI in a `.drawio`
+ * style string, in both forms draw.io can produce: the base64-marker-
+ * omitting `data:image/webp,<base64>` (see `normalizeDataUri`'s doc
+ * comment) and the RFC-compliant `data:image/webp;base64,<base64>`. The
+ * base64 payload alphabet never contains XML-significant characters
+ * (`&`, `<`, `>`, `"`, `'`), so it is safe to match directly against the
+ * raw, not-yet-parsed `.drawio` XML text.
+ */
+const WEBP_DATA_URI_RE = /data:image\/webp(?:;base64)?,([A-Za-z0-9+/=]+)/g;
+
+/**
+ * resvg (via `@resvg/resvg-js`) has no `image/webp` decoder: a `<image>`
+ * href pointing at a webp data URI doesn't just fail to render its own
+ * icon, it blanks out the entire raster region resvg was drawing,
+ * silently dropping the surrounding `<rect>`/`<text>` too (issue #21).
+ * This scans the raw `.drawio` XML for embedded webp images *before* SVG
+ * generation and re-encodes each one as PNG via `sharp`, so by the time
+ * `renderDrawioToSvg` builds the `<image>` element it is already a
+ * codec resvg supports. Conversion failures fall back to leaving the
+ * original (still-broken-in-resvg, but unchanged) data URI in place
+ * rather than throwing, so a single malformed icon doesn't fail the
+ * whole render.
+ */
+export async function convertWebpImagesToPng(drawioXml: string): Promise<string> {
+  const matches = [...drawioXml.matchAll(WEBP_DATA_URI_RE)];
+  if (matches.length === 0) return drawioXml;
+
+  const replacements = new Map<string, string>();
+  for (const match of matches) {
+    const [fullMatch, payload] = match;
+    if (!payload || replacements.has(fullMatch)) continue;
+    try {
+      const webpBuffer = Buffer.from(payload, "base64");
+      const pngBuffer = await sharp(webpBuffer).png().toBuffer();
+      // Mirror draw.io's own storage convention (see `normalizeDataUri`'s
+      // doc comment): omit the ";base64," marker here too, since this
+      // replacement lands back inside a `;`-delimited style string -
+      // `normalizeDataUri` re-inserts the marker later, once the value
+      // has been safely extracted from the style string.
+      replacements.set(fullMatch, `data:image/png,${pngBuffer.toString("base64")}`);
+    } catch (error) {
+      const reason = error instanceof Error ? error.message : String(error);
+      console.warn(`Could not convert embedded webp image to PNG, leaving as-is: ${reason}`);
+    }
+  }
+  if (replacements.size === 0) return drawioXml;
+
+  let result = drawioXml;
+  for (const [original, replacement] of replacements) {
+    result = result.split(original).join(replacement);
+  }
+  return result;
 }
 
 /**
@@ -779,10 +835,12 @@ function renderPage(
    * The renderer used to hard-code an 850x700 canvas regardless of the
    * document's actual page size (the "squeezed" bug: a diagram authored on
    * draw.io's default 1600x900+ canvas got clipped/squeezed into 850x700).
-   * Prefer the real `<mxGraphModel pageWidth/pageHeight>` attributes; if
-   * absent, fall back to the bounding box of every node's absolute
-   * geometry (with a small margin) so the canvas always fits the content;
-   * only fall back to the 850x700 default when neither is available.
+   * Prefer the real `<mxGraphModel pageWidth/pageHeight>` attributes, but
+   * grow the canvas to fit the bounding box of every node's absolute
+   * geometry (with a small margin) when content overflows the declared
+   * page size — matching real draw.io's PNG export behavior. Only fall
+   * back to the 850x700 default when neither a declared page size nor
+   * any content is available.
    */
   const modelPageWidth = numAttr(root, "pageWidth", 0);
   const modelPageHeight = numAttr(root, "pageHeight", 0);
@@ -793,8 +851,8 @@ function renderPage(
     bboxBottom = Math.max(bboxBottom, geo.y + geo.h);
   }
   const margin = 20;
-  const diagramWidth = modelPageWidth || (bboxRight ? bboxRight + margin : 850);
-  const diagramHeight = modelPageHeight || (bboxBottom ? bboxBottom + margin : 700);
+  const diagramWidth = Math.max(modelPageWidth, bboxRight ? bboxRight + margin : 0) || 850;
+  const diagramHeight = Math.max(modelPageHeight, bboxBottom ? bboxBottom + margin : 0) || 700;
 
   return { nodeSvg, edgeSvg, width: diagramWidth, height: diagramHeight };
 }

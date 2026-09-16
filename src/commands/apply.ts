@@ -5,7 +5,7 @@ import type { ApplyOptions, CellClass, TransformStats, VerboseCellDetail } from 
 import { loadTheme } from "../theme/loader.js";
 import { compileTheme } from "../theme/compiler.js";
 import { transformDrawioXml } from "../drawio/transform.js";
-import { renderDrawioToSvg } from "../render/svg.js";
+import { convertWebpImagesToPng, renderDrawioToSvg } from "../render/svg.js";
 import type { RenderOptions } from "../render/svg.js";
 import { rasterizeSvgToPng } from "../render/rasterize.js";
 
@@ -104,7 +104,8 @@ async function renderDrawioToPng(
   outputPath: string,
   options?: RenderOptions,
 ): Promise<void> {
-  const svg = renderDrawioToSvg(drawioXml, options);
+  const converted = await convertWebpImagesToPng(drawioXml);
+  const svg = renderDrawioToSvg(converted, options);
   const png = rasterizeSvgToPng(svg);
   await writeRenderOutput("PNG", outputPath, png);
 }
@@ -119,7 +120,8 @@ async function renderDrawioToSvgFile(
   outputPath: string,
   options?: RenderOptions,
 ): Promise<void> {
-  const svg = renderDrawioToSvg(drawioXml, options);
+  const converted = await convertWebpImagesToPng(drawioXml);
+  const svg = renderDrawioToSvg(converted, options);
   await writeRenderOutput("SVG", outputPath, svg);
 }
 
