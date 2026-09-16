@@ -1192,7 +1192,12 @@ describe("renderDrawioToSvg", () => {
 
     const svg = renderDrawioToSvg(xml);
 
-    expect(svg).toContain(">Bold &amp; safe<");
+    // Since issue #56, a nested `<b>` is honored as a styled run (not
+    // flattened away) rather than stripped to plain text - only the raw
+    // tag markup itself and the entity encoding are what get "stripped"/
+    // decoded here.
+    expect(svg).toMatch(/<tspan font-weight="bold">Bold<\/tspan>/);
+    expect(svg).toContain("&amp; safe");
     expect(svg).not.toContain("&lt;b&gt;");
   });
 
@@ -1212,6 +1217,42 @@ describe("renderDrawioToSvg", () => {
     expect(textElements[0]?.[1]).toBe("1 Experience Layer");
     expect(textElements[1]?.[0]).not.toContain('font-weight="bold"');
     expect(textElements[1]?.[1]).toBe("Natural and flexible ways to work");
+  });
+
+  it("bullet-prefixes each <li> line from a <ul> list in an html=1 label (issue #56)", () => {
+    const xml = drawio(
+      '<mxCell id="0"/><mxCell id="1" parent="0"/>' +
+        '<mxCell id="n1" value="&lt;ul&gt;&lt;li&gt;a&lt;/li&gt;&lt;li&gt;b&lt;/li&gt;&lt;/ul&gt;" ' +
+        'style="html=1;" vertex="1" parent="1">' +
+        '<mxGeometry x="0" y="0" width="100" height="50" as="geometry"/></mxCell>',
+    );
+
+    const svg = renderDrawioToSvg(xml);
+    const textElements = [...svg.matchAll(/<text[^>]*>([^<]*)<\/text>/g)];
+
+    expect(textElements).toHaveLength(2);
+    expect(textElements[0]?.[1]).toBe("\u2022 a");
+    expect(textElements[1]?.[1]).toBe("\u2022 b");
+    expect(svg).not.toContain("<li>");
+    expect(svg).not.toContain("<ul>");
+  });
+
+  it("applies both bold and italic to a nested <b><i>x</i></b> mid-line run without styling sibling text (issue #56)", () => {
+    const xml = drawio(
+      '<mxCell id="0"/><mxCell id="1" parent="0"/>' +
+        '<mxCell id="n1" value="before &lt;b&gt;&lt;i&gt;x&lt;/i&gt;&lt;/b&gt; after" ' +
+        'style="html=1;" vertex="1" parent="1">' +
+        '<mxGeometry x="0" y="0" width="100" height="50" as="geometry"/></mxCell>',
+    );
+
+    const svg = renderDrawioToSvg(xml);
+
+    const boldItalicRun = /<tspan font-weight="bold" font-style="italic">x<\/tspan>/;
+    expect(svg).toMatch(boldItalicRun);
+    // Sibling text in the same line stays unstyled (no font-weight/style
+    // attributes on its own tspan).
+    expect(svg).toMatch(/<tspan>before <\/tspan>/);
+    expect(svg).toMatch(/<tspan> after<\/tspan>/);
   });
 
   it("positions an edge-label child cell along the edge's real path instead of at (0,0) (issue #14)", () => {

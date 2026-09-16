@@ -511,19 +511,156 @@ function decodeHtmlEntities(text: string): string {
     .replace(/&#39;/g, "'");
 }
 
-/** One line of an `html=1` label, with an optional per-line bold/italic
- * override relative to the cell's own `fontStyle` baseline (issue #38). */
-interface HtmlLabelLine {
+/** One run of text within an `html=1` label line, with its own
+ * bold/italic flags from nested `<b>`/`<i>`/`<span>` tags (issue #56). */
+interface HtmlRun {
   text: string;
   bold?: boolean;
   italic?: boolean;
 }
 
+/** One line of an `html=1` label, with an optional per-line bold/italic
+ * override relative to the cell's own `fontStyle` baseline (issue #38).
+ * `runs` is only populated when the line contains more than one
+ * differently-styled inline run (nested `<b>`/`<i>`/`<span>`, issue #56);
+ * plain lines and full-line-span lines (issue #38) keep using the flat
+ * `text`/`bold`/`italic` fields so existing behavior is unchanged. */
+interface HtmlLabelLine {
+  text: string;
+  bold?: boolean;
+  italic?: boolean;
+  runs?: HtmlRun[];
+}
+
 // Matches a line whose *entire* content is wrapped in a single
-// `<span style="...">...</span>` - the line-level-only scope this issue
-// asks for (partial-line/mid-line multi-run spans are explicitly out of
-// scope, see issue #38's "Proposed fix").
+// `<span style="...">...</span>` - the line-level-only scope issue #38
+// asks for (partial-line/mid-line multi-run spans are handled separately
+// by `parseInlineRuns`, see issue #56).
 const FULL_LINE_SPAN = /^<span\s+style="([^"]*)"\s*>([\s\S]*)<\/span>$/i;
+
+// Tags that carry inline bold/italic styling; every other tag
+// (div/p/ul/li/...) is a structural no-op here since block splitting and
+// bullet-prefixing already happen before `parseInlineRuns` runs.
+function applyTagStyle(
+  tag: string,
+  token: string,
+  bold: boolean,
+  italic: boolean,
+): { bold: boolean; italic: boolean } {
+  if (tag === "b" || tag === "strong") return { bold: true, italic };
+  if (tag === "i" || tag === "em") return { bold, italic: true };
+  if (tag === "span") {
+    const styleMatch = /style="([^"]*)"/i.exec(token);
+    const styleStr = styleMatch?.[1] ?? "";
+    const boldMatch = /font-weight\s*:\s*(normal|bold)/i.exec(styleStr);
+    const italicMatch = /font-style\s*:\s*(normal|italic)/i.exec(styleStr);
+    return {
+      bold: boldMatch ? (boldMatch[1] ?? "").toLowerCase() === "bold" : bold,
+      italic: italicMatch ? (italicMatch[1] ?? "").toLowerCase() === "italic" : italic,
+    };
+  }
+  return { bold, italic };
+}
+
+/**
+ * Parses a single label line's inner markup into a flat list of styled
+ * text runs, honoring nested `<b>`/`<strong>`/`<i>`/`<em>`/`<span
+ * style="...">` combinations (e.g. `<b><i>x</i></b>` yields one run with
+ * both `bold` and `italic` set) while treating every other tag
+ * (`<ul>`/`<li>`/stray `<div>`/`<p>` remnants) as a no-op to strip
+ * (issue #56). This is deliberately not a general HTML parser: it has no
+ * notion of block layout, attributes beyond `style`, or malformed-markup
+ * recovery beyond "ignore an unmatched closing tag".
+ */
+function parseInlineRuns(content: string): HtmlRun[] {
+  const tokens = content.match(/<[^>]+>|[^<]+/g) ?? [];
+  const runs: HtmlRun[] = [];
+  const stack: { tag: string; prevBold: boolean; prevItalic: boolean }[] = [];
+  let bold = false;
+  let italic = false;
+
+  for (const token of tokens) {
+    if (!token.startsWith("<")) {
+      const text = decodeHtmlEntities(token);
+      if (text !== "") runs.push({ text, bold: bold || undefined, italic: italic || undefined });
+      continue;
+    }
+    const isClosing = token.startsWith("</");
+    const tag = (/^<\/?\s*([a-zA-Z][a-zA-Z0-9]*)/.exec(token)?.[1] ?? "").toLowerCase();
+    if (!tag) continue;
+
+    if (isClosing) {
+      const openIdx = stack.map((s) => s.tag).lastIndexOf(tag);
+      if (openIdx === -1) continue;
+      // Only restore state when closing the innermost open tag; a
+      // malformed/overlapping close is left as a no-op best-effort.
+      if (openIdx === stack.length - 1) {
+        const entry = stack[openIdx];
+        if (entry) {
+          bold = entry.prevBold;
+          italic = entry.prevItalic;
+        }
+      }
+      stack.splice(openIdx, 1);
+      continue;
+    }
+
+    const prevBold = bold;
+    const prevItalic = italic;
+    ({ bold, italic } = applyTagStyle(tag, token, bold, italic));
+    if (!/\/>$/.test(token)) stack.push({ tag, prevBold, prevItalic });
+  }
+
+  // Merge consecutive runs that ended up with identical styling (common
+  // case: a line with no nested tags at all) so callers can cheaply tell
+  // "one run" (flat line) apart from "genuinely multi-styled" (issue #56).
+  const merged: HtmlRun[] = [];
+  for (const run of runs) {
+    const last = merged[merged.length - 1];
+    if (last && !!last.bold === !!run.bold && !!last.italic === !!run.italic) {
+      last.text += run.text;
+    } else {
+      merged.push({ ...run });
+    }
+  }
+  if (merged.length > 0) {
+    const first = merged[0];
+    const lastEntry = merged[merged.length - 1];
+    if (first) first.text = first.text.replace(/^\s+/, "");
+    if (lastEntry) lastEntry.text = lastEntry.text.replace(/\s+$/, "");
+  }
+  return merged.filter((run) => run.text !== "");
+}
+
+const BULLET_MARKER = "\u0001";
+const BULLET_PREFIX = "\u2022 ";
+
+/**
+ * Slices a run list down to the `[start, end)` character range of their
+ * concatenated text (e.g. one width-wrapped sub-line's span within the
+ * original unwrapped line), splitting any run straddling a boundary.
+ * Used to keep per-run bold/italic (issue #56) intact across `wrapLabel`'s
+ * width-driven reflow of a multi-run line.
+ */
+function sliceRunsForRange(runs: HtmlRun[], start: number, end: number): HtmlRun[] {
+  const result: HtmlRun[] = [];
+  let pos = 0;
+  for (const run of runs) {
+    const runStart = pos;
+    const runEnd = pos + run.text.length;
+    pos = runEnd;
+    const sliceStart = Math.max(start, runStart);
+    const sliceEnd = Math.min(end, runEnd);
+    if (sliceStart < sliceEnd) {
+      result.push({
+        text: run.text.slice(sliceStart - runStart, sliceEnd - runStart),
+        bold: run.bold,
+        italic: run.italic,
+      });
+    }
+  }
+  return result;
+}
 
 /**
  * A label with `html=1` in its style stores real (draw.io-editor-authored)
@@ -540,9 +677,16 @@ const FULL_LINE_SPAN = /^<span\s+style="([^"]*)"\s*>([\s\S]*)<\/span>$/i;
  * heading) overrides the cell-level bold/italic for that line only
  * (issue #38) - the span tags themselves are stripped from the visible
  * text.
+ *
+ * Beyond that, nested inline tags within a line (`<b><i>x</i></b>`) are
+ * parsed into per-run bold/italic via `parseInlineRuns`, and `<li>`
+ * elements are bullet-prefixed with "\u2022 " (issue #56). Full arbitrary
+ * HTML/CSS layout (block nesting depth, floats, attributes beyond
+ * `style`) remains out of scope - see the PR description for #56.
  */
 function parseHtmlLabelLines(html: string): HtmlLabelLine[] {
   const rawLines = html
+    .replace(/<li[^>]*>/gi, BULLET_MARKER)
     .replace(/<br\s*\/?>/gi, "\u0000")
     .replace(/<\/(div|p|li)>/gi, "\u0000")
     .replace(/\n/g, "\u0000")
@@ -551,21 +695,42 @@ function parseHtmlLabelLines(html: string): HtmlLabelLine[] {
   const lines: HtmlLabelLine[] = [];
   for (const raw of rawLines) {
     const trimmed = raw.trim();
-    const spanMatch = FULL_LINE_SPAN.exec(trimmed);
-    let bold: boolean | undefined;
-    let italic: boolean | undefined;
-    const content = spanMatch ? (spanMatch[2] ?? "") : trimmed;
+    const isBullet = trimmed.includes(BULLET_MARKER);
+    const unmarked = isBullet ? trimmed.replaceAll(BULLET_MARKER, "") : trimmed;
+    const spanMatch = FULL_LINE_SPAN.exec(unmarked);
+
     if (spanMatch) {
+      // Full-line `<span>` override (issue #38): keep the existing flat
+      // text/bold/italic shape unchanged rather than routing it through
+      // `parseInlineRuns`, so that behavior stays exactly as before.
       const spanStyle = spanMatch[1] ?? "";
       const boldMatch = /font-weight\s*:\s*(normal|bold)/i.exec(spanStyle);
-      if (boldMatch) bold = (boldMatch[1] ?? "").toLowerCase() === "bold";
       const italicMatch = /font-style\s*:\s*(normal|italic)/i.exec(spanStyle);
-      if (italicMatch) italic = (italicMatch[1] ?? "").toLowerCase() === "italic";
+      const bold = boldMatch ? (boldMatch[1] ?? "").toLowerCase() === "bold" : undefined;
+      const italic = italicMatch ? (italicMatch[1] ?? "").toLowerCase() === "italic" : undefined;
+      const text = decodeHtmlEntities((spanMatch[2] ?? "").replace(/<[^>]+>/g, "")).trim();
+      if (text === "" && rawLines.length > 1) continue;
+      lines.push({ text: isBullet ? BULLET_PREFIX + text : text, bold, italic });
+      continue;
     }
 
-    const text = decodeHtmlEntities(content.replace(/<[^>]+>/g, "")).trim();
+    const runs = parseInlineRuns(unmarked);
+    if (isBullet) {
+      const firstRun = runs[0];
+      if (firstRun) firstRun.text = BULLET_PREFIX + firstRun.text;
+      else runs.push({ text: BULLET_PREFIX });
+    }
+    const text = runs
+      .map((run) => run.text)
+      .join("")
+      .trim();
     if (text === "" && rawLines.length > 1) continue;
-    lines.push({ text, bold, italic });
+
+    if (runs.length > 1) {
+      lines.push({ text, runs });
+    } else {
+      lines.push({ text, bold: runs[0]?.bold, italic: runs[0]?.italic });
+    }
   }
   return lines.length > 0 ? lines : [{ text: "" }];
 }
@@ -1845,9 +2010,17 @@ function renderPage(
         `<clipPath id="clip-${id}"><rect x="${x}" y="${y}" width="${w}" height="${h}"/></clipPath>`,
       );
     }
+    interface RenderRun {
+      text: string;
+      fontAttrs: string;
+    }
     interface RenderLine {
       text: string;
       fontAttrs: string;
+      // Present only for lines with genuinely multi-styled inline runs
+      // (nested `<b>`/`<i>`/`<span>`, issue #56); rendered as sibling
+      // `<tspan>`s instead of a single flat `<text>` body.
+      runs?: RenderRun[];
     }
     const buildFontAttrs = (bold: boolean, italic: boolean): string =>
       (bold ? ' font-weight="bold"' : "") +
@@ -1864,6 +2037,25 @@ function renderPage(
         const bold = htmlLine.bold ?? isBold;
         const italic = htmlLine.italic ?? isItalic;
         const fontAttrs = buildFontAttrs(bold, italic);
+        if (htmlLine.runs && htmlLine.runs.length > 1) {
+          // Mid-line multi-run styling (issue #56): re-wrap by the flat
+          // concatenated text as usual, then re-slice the original runs
+          // to each wrapped sub-line's character range so bold/italic
+          // boundaries survive width-driven reflow.
+          const wrappedText = wrap ? wrapLabel(htmlLine.text, w, fontSize, bold) : [htmlLine.text];
+          let cursor = 0;
+          return wrappedText.map((text) => {
+            const idx = htmlLine.text.indexOf(text, cursor);
+            const start = idx >= 0 ? idx : cursor;
+            const end = start + text.length;
+            cursor = end;
+            const runs = sliceRunsForRange(htmlLine.runs ?? [], start, end).map((run) => ({
+              text: run.text,
+              fontAttrs: buildFontAttrs(run.bold ?? bold, run.italic ?? italic),
+            }));
+            return { text, fontAttrs, runs };
+          });
+        }
         const wrapped = wrap ? wrapLabel(htmlLine.text, w, fontSize, bold) : [htmlLine.text];
         return wrapped.map((text) => ({ text, fontAttrs }));
       });
@@ -1885,7 +2077,18 @@ function renderPage(
       textY -= ((lines.length - 1) * lineHeight) / 2;
     }
 
-    lines.forEach(({ text: line, fontAttrs: lineFontAttrs }, i) => {
+    // Renders a line's body as either plain escaped text or, when it
+    // carries multi-styled inline runs (issue #56), sibling `<tspan>`s
+    // each with their own bold/italic attributes.
+    const renderLineBody = (renderLine: RenderLine): string =>
+      renderLine.runs && renderLine.runs.length > 0
+        ? renderLine.runs
+            .map((run) => `<tspan${run.fontAttrs}>${escapeXml(run.text)}</tspan>`)
+            .join("")
+        : escapeXml(renderLine.text);
+
+    lines.forEach((renderLine, i) => {
+      const { fontAttrs: lineFontAttrs } = renderLine;
       if (rotatedLabel) {
         // Rotate about the label's own anchor point so it reads
         // bottom-to-top along the left edge, matching draw.io's
@@ -1899,7 +2102,7 @@ function renderPage(
         cellSvg.push(
           `<text x="${px.toFixed(1)}" y="${py.toFixed(1)}" text-anchor="middle" ` +
             `font-family="${fontFamily}" font-size="${fontSize}" fill="${fontColor}"${lineFontAttrs} ` +
-            `transform="rotate(-90 ${px.toFixed(1)} ${py.toFixed(1)})">${escapeXml(line)}</text>`,
+            `transform="rotate(-90 ${px.toFixed(1)} ${py.toFixed(1)})">${renderLineBody(renderLine)}</text>`,
         );
         return;
       }
@@ -1922,7 +2125,7 @@ function renderPage(
 
       const text =
         `<text x="${textX}" y="${textY + i * lineHeight}" text-anchor="${textAnchor}" ` +
-        `font-family="${fontFamily}" font-size="${fontSize}" fill="${fontColor}"${lineFontAttrs}>${escapeXml(line)}</text>`;
+        `font-family="${fontFamily}" font-size="${fontSize}" fill="${fontColor}"${lineFontAttrs}>${renderLineBody(renderLine)}</text>`;
       // clipped=1 crops overflowing text at the box boundary rather than
       // reflowing it (issue #55) - only meaningful when the label still
       // sits inside the shape's own geometry (the default labelPosition).
