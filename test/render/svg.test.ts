@@ -646,6 +646,37 @@ describe("renderDrawioToSvg", () => {
     expect(svg).not.toMatch(/<line x1=/);
   });
 
+  it("renders an edge with curved=1 and explicit waypoints as a smoothed <path>, not a straight <polyline> (issue #53, 2a)", () => {
+    const xml = drawio(
+      '<mxCell id="0"/><mxCell id="1" parent="0"/>' +
+        '<mxCell id="n1" style="" vertex="1" parent="1"><mxGeometry x="0" y="0" width="100" height="100" as="geometry"/></mxCell>' +
+        '<mxCell id="n2" style="" vertex="1" parent="1"><mxGeometry x="300" y="300" width="100" height="100" as="geometry"/></mxCell>' +
+        '<mxCell id="e1" style="strokeColor=#000000;curved=1;" edge="1" parent="1" source="n1" target="n2">' +
+        '<mxGeometry relative="1" as="geometry"><Array as="points">' +
+        '<mxPoint x="200" y="50"/></Array></mxGeometry></mxCell>',
+    );
+
+    const svg = renderDrawioToSvg(xml);
+
+    expect(svg).toContain("<path d=");
+    expect(svg).toMatch(/<path d="[^"]*Q [^"]*"/);
+    expect(svg).not.toContain("<polyline");
+  });
+
+  it("renders an edge with curved=1 but no waypoints as a valid line/path, without crashing (issue #53, 2a)", () => {
+    const xml = drawio(
+      '<mxCell id="0"/><mxCell id="1" parent="0"/>' +
+        '<mxCell id="n1" style="" vertex="1" parent="1"><mxGeometry x="0" y="0" width="100" height="100" as="geometry"/></mxCell>' +
+        '<mxCell id="n2" style="" vertex="1" parent="1"><mxGeometry x="300" y="300" width="100" height="100" as="geometry"/></mxCell>' +
+        '<mxCell id="e1" style="strokeColor=#000000;curved=1;" edge="1" parent="1" source="n1" target="n2">' +
+        '<mxGeometry relative="1" as="geometry"/></mxCell>',
+    );
+
+    const svg = renderDrawioToSvg(xml);
+
+    expect(svg).toMatch(/<path d="M [\d.]+ [\d.]+ L [\d.]+ [\d.]+"/);
+  });
+
   it("clips an edge endpoint to the target ellipse's real perimeter, not its bbox corner (issue #35)", () => {
     const xml = drawio(
       '<mxCell id="0"/><mxCell id="1" parent="0"/>' +
@@ -1184,6 +1215,47 @@ describe("renderDrawioToSvg", () => {
     expect(svg).not.toContain(">Child<");
   });
 
+  it("renders a fold glyph on a collapsed swimlane's title bar (issue #57, 6d)", () => {
+    const xml = drawio(
+      '<mxCell id="0"/><mxCell id="1" parent="0"/>' +
+        '<mxCell id="box" value="Box" ' +
+        'style="swimlane;startSize=30;collapsed=1;" vertex="1" parent="1">' +
+        '<mxGeometry x="0" y="0" width="200" height="200" as="geometry"/></mxCell>',
+    );
+
+    const svg = renderDrawioToSvg(xml);
+
+    // Glyph is a small bordered square (rect) plus a "+" cross (two lines)
+    // near the title bar's top-left corner, in addition to the title/body
+    // rects the swimlane already renders.
+    expect(svg).toMatch(/<rect x="2\.0" y="2\.0" width="16\.0" height="16\.0"/);
+  });
+
+  it("does not render a fold glyph on a non-collapsed swimlane", () => {
+    const xml = drawio(
+      '<mxCell id="0"/><mxCell id="1" parent="0"/>' +
+        '<mxCell id="box" value="Box" style="swimlane;startSize=30;" vertex="1" parent="1">' +
+        '<mxGeometry x="0" y="0" width="200" height="200" as="geometry"/></mxCell>',
+    );
+
+    const svg = renderDrawioToSvg(xml);
+
+    expect(svg).not.toMatch(/<rect x="2\.0" y="2\.0" width="16\.0" height="16\.0"/);
+  });
+
+  it("does not render a fold glyph on a plain (non-container) rect with collapsed=1", () => {
+    const xml = drawio(
+      '<mxCell id="0"/><mxCell id="1" parent="0"/>' +
+        '<mxCell id="n1" value="Plain" style="collapsed=1;" vertex="1" parent="1">' +
+        '<mxGeometry x="0" y="0" width="100" height="60" as="geometry"/></mxCell>',
+    );
+
+    const svg = renderDrawioToSvg(xml);
+
+    expect(svg).toContain(">Plain<");
+    expect(svg).not.toMatch(/<rect x="2\.0" y="2\.0" width="16\.0" height="16\.0"/);
+  });
+
   it("renders a plain group wrapper cell as invisible (no rect/label)", () => {
     const xml = drawio(
       '<mxCell id="0"/><mxCell id="1" parent="0"/>' +
@@ -1209,6 +1281,85 @@ describe("renderDrawioToSvg", () => {
     const svg = renderDrawioToSvg(xml);
 
     expect(svg).toContain('<g transform="rotate(45 25 25)">');
+  });
+
+  it("applies a horizontal flip transform to a node with flipH=1 (issue #57)", () => {
+    const xml = drawio(
+      '<mxCell id="0"/><mxCell id="1" parent="0"/>' +
+        '<mxCell id="n1" style="flipH=1;" vertex="1" parent="1">' +
+        '<mxGeometry x="0" y="0" width="50" height="50" as="geometry"/></mxCell>',
+    );
+
+    const svg = renderDrawioToSvg(xml);
+
+    expect(svg).toContain('<g transform="translate(25 25) scale(-1 1) translate(-25 -25)">');
+  });
+
+  it("applies a vertical flip transform to a node with flipV=1 (issue #57)", () => {
+    const xml = drawio(
+      '<mxCell id="0"/><mxCell id="1" parent="0"/>' +
+        '<mxCell id="n1" style="flipV=1;" vertex="1" parent="1">' +
+        '<mxGeometry x="0" y="0" width="50" height="50" as="geometry"/></mxCell>',
+    );
+
+    const svg = renderDrawioToSvg(xml);
+
+    expect(svg).toContain('<g transform="translate(25 25) scale(1 -1) translate(-25 -25)">');
+  });
+
+  it("composes flipH, flipV and rotation into a single transform (issue #57)", () => {
+    const xml = drawio(
+      '<mxCell id="0"/><mxCell id="1" parent="0"/>' +
+        '<mxCell id="n1" style="flipH=1;flipV=1;rotation=45;" vertex="1" parent="1">' +
+        '<mxGeometry x="0" y="0" width="50" height="50" as="geometry"/></mxCell>',
+    );
+
+    const svg = renderDrawioToSvg(xml);
+
+    expect(svg).toContain(
+      '<g transform="translate(25 25) scale(-1 -1) translate(-25 -25) rotate(45 25 25)">',
+    );
+  });
+
+  it("does not add a flip transform for a cell without flipH/flipV (no regression, issue #57)", () => {
+    const xml = drawio(
+      '<mxCell id="0"/><mxCell id="1" parent="0"/>' +
+        '<mxCell id="n1" style="" vertex="1" parent="1">' +
+        '<mxGeometry x="0" y="0" width="50" height="50" as="geometry"/></mxCell>',
+    );
+
+    const svg = renderDrawioToSvg(xml);
+
+    expect(svg).not.toContain("scale(-1");
+    expect(svg).not.toContain("scale(1 -1");
+  });
+
+  it("keeps a flipped cell's label text upright/unmirrored, matching real draw.io (issue #57 follow-up)", () => {
+    // Verified against the real draw.io web app: flipping a shape mirrors
+    // its geometry but the label stays readable, not mirrored. The
+    // original flipH/flipV fix wrapped the whole cell (shape + label) in
+    // one `scale(-1 ...)` transform, which also mirrored the label text
+    // into unreadable backwards glyphs - caught via a real E2E screenshot
+    // comparison, not by the original label-less unit tests.
+    const xml = drawio(
+      '<mxCell id="0"/><mxCell id="1" parent="0"/>' +
+        '<mxCell id="n1" value="Flipped" style="shape=triangle;flipH=1;" vertex="1" parent="1">' +
+        '<mxGeometry x="0" y="0" width="50" height="50" as="geometry"/></mxCell>',
+    );
+
+    const svg = renderDrawioToSvg(xml);
+
+    // The shape (polygon) is still mirrored...
+    expect(svg).toMatch(/<g transform="translate\(25 25\) scale\(-1 1\) translate\(-25 -25\)">/);
+    // ...but the label's own <text> element must NOT sit inside that
+    // mirrored group - it renders unwrapped (or in its own, non-mirrored
+    // group), so the text glyphs themselves are never flipped.
+    const flippedGroupMatch = svg.match(
+      /<g transform="translate\(25 25\) scale\(-1 1\) translate\(-25 -25\)">([\s\S]*?)<\/g>/,
+    );
+    expect(flippedGroupMatch).not.toBeNull();
+    expect(flippedGroupMatch![1]).not.toContain("<text");
+    expect(svg).toContain(">Flipped<");
   });
 
   it("shifts negative-coordinate content back onto the canvas instead of clipping it (issue #15)", () => {
@@ -1726,5 +1877,94 @@ describe("label positioning and clipping (issue #55)", () => {
     expect(clippedLineCount).toBe(1);
     expect(clippedSvg).toContain("<clipPath");
     expect(clippedSvg).toContain("clip-path=");
+  });
+
+  // Issue #58, 7d: container-relative edge routing investigation.
+  describe("edge endpoints and container-relative coordinates (issue #58, 7d)", () => {
+    it("clips an edge endpoint to a node nested inside a (non-collapsed) container at its absolute position", () => {
+      // "Child" is at local (20,30) inside a container placed at (100,100),
+      // so its real absolute box is (120,130)-(200,170). The edge's source
+      // endpoint must land on that absolute box's perimeter, not on the
+      // container's own box and not on the child's raw local (20,30)
+      // coordinates.
+      const xml = drawio(
+        '<mxCell id="0"/><mxCell id="1" parent="0"/>' +
+          '<mxCell id="c1" value="Container" style="container=1;" vertex="1" parent="1">' +
+          '<mxGeometry x="100" y="100" width="300" height="200" as="geometry"/></mxCell>' +
+          '<mxCell id="n1" value="Child" style="" vertex="1" parent="c1">' +
+          '<mxGeometry x="20" y="30" width="80" height="40" as="geometry"/></mxCell>' +
+          '<mxCell id="n2" value="Outside" style="" vertex="1" parent="1">' +
+          '<mxGeometry x="500" y="500" width="80" height="40" as="geometry"/></mxCell>' +
+          '<mxCell id="e1" style="" edge="1" parent="1" source="n1" target="n2">' +
+          '<mxGeometry relative="1" as="geometry"/></mxCell>',
+      );
+
+      const svg = renderDrawioToSvg(xml);
+
+      // The child renders at its real absolute box (100+20, 100+30) =
+      // (120, 130), confirming absoluteOffset() resolved correctly.
+      expect(svg).toContain('<rect x="120" y="130" width="80" height="40"');
+
+      const line = svg.match(/<line x1="([\d.-]+)" y1="([\d.-]+)" x2="([\d.-]+)" y2="([\d.-]+)"/);
+      expect(line).not.toBeNull();
+      const [, x1, y1] = line!.map(Number) as unknown as [number, number, number, number];
+      // The edge must leave from the child's absolute perimeter (box
+      // 120..200 x 130..170), not from the container's box (100..400 x
+      // 100..300) and not from the child's raw local box (20..100 x
+      // 30..70).
+      expect(x1).toBeGreaterThanOrEqual(120);
+      expect(x1).toBeLessThanOrEqual(200);
+      expect(y1).toBeGreaterThanOrEqual(130);
+      expect(y1).toBeLessThanOrEqual(170);
+    });
+
+    it("documents current behavior for an edge into a node inside a collapsed container: it terminates at the hidden child's own (absolute) position, not rerouted to the container's perimeter", () => {
+      // Real draw.io reroutes an edge whose endpoint sits inside a
+      // collapsed container to visually terminate at the container's own
+      // perimeter instead. Implementing that faithfully would require
+      // porting mxgraph's edge-to-collapsed-container rerouting algorithm,
+      // which is out of scope for this investigation (see issue #58, 7d
+      // and this test file's handoff notes). This test pins down what our
+      // renderer currently does instead: it does NOT crash and does NOT
+      // silently drop the edge - it still renders a line from the hidden
+      // child's absolute (unrendered) box, which today lands inside the
+      // collapsed container's own box rather than on its border. If this
+      // is ever fixed to reroute to the container's perimeter, update this
+      // test's expectations accordingly.
+      const xml = drawio(
+        '<mxCell id="0"/><mxCell id="1" parent="0"/>' +
+          '<mxCell id="c1" value="Container" style="container=1;collapsed=1;" vertex="1" parent="1">' +
+          '<mxGeometry x="100" y="100" width="300" height="200" as="geometry"/></mxCell>' +
+          '<mxCell id="n1" value="Child" style="" vertex="1" parent="c1">' +
+          '<mxGeometry x="20" y="30" width="80" height="40" as="geometry"/></mxCell>' +
+          '<mxCell id="n2" value="Outside" style="" vertex="1" parent="1">' +
+          '<mxGeometry x="500" y="500" width="80" height="40" as="geometry"/></mxCell>' +
+          '<mxCell id="e1" style="" edge="1" parent="1" source="n1" target="n2">' +
+          '<mxGeometry relative="1" as="geometry"/></mxCell>',
+      );
+
+      const svg = renderDrawioToSvg(xml);
+
+      // The collapsed container's hidden child is not drawn as a node.
+      expect(svg).not.toContain('width="80" height="40"" x="120"');
+      const childRectCount = [...svg.matchAll(/<rect x="120" y="130"/g)].length;
+      expect(childRectCount).toBe(0);
+
+      // The edge still renders (no crash, not silently dropped) and its
+      // source endpoint is the hidden child's clipped absolute perimeter
+      // point - which, being inside the collapsed container's own box
+      // (100..400 x 100..300), is NOT on that container's own border.
+      const line = svg.match(/<line x1="([\d.-]+)" y1="([\d.-]+)" x2="([\d.-]+)" y2="([\d.-]+)"/);
+      expect(line).not.toBeNull();
+      const [, x1, y1] = line!.map(Number) as unknown as [number, number, number, number];
+      expect(x1).toBeCloseTo(180.5, 1);
+      expect(y1).toBeCloseTo(170, 1);
+      // Confirms this point is strictly inside the container's box, not on
+      // its border - i.e. no perimeter-rerouting happens today.
+      expect(x1).toBeGreaterThan(100);
+      expect(x1).toBeLessThan(400);
+      expect(y1).toBeGreaterThan(100);
+      expect(y1).toBeLessThan(300);
+    });
   });
 });

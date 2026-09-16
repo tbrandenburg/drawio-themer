@@ -387,6 +387,30 @@ function actorPath(x: number, y: number, w: number, h: number): string {
 }
 
 /**
+ * Draws real draw.io's small collapse/expand indicator (mxSwimlane's
+ * folding icon painted by `mxSwimlane.paintFoldIcon()`): a bordered square
+ * in the title bar's top-left corner containing a "+" (collapsed, meaning
+ * "click to expand") or "-" (expanded, meaning "click to collapse") glyph.
+ * Purely cosmetic for a static export - there is no click handler here,
+ * only the icon drawn. `x`/`y` is the icon's top-left corner and `size`
+ * its width/height (real draw.io uses a fixed 16px `mxConstants.FOLD_ICON`
+ * -like square regardless of the swimlane's own size, kept simple here).
+ */
+function collapseGlyph(x: number, y: number, size: number, collapsed: boolean): string {
+  const cx = x + size / 2;
+  const cy = y + size / 2;
+  const half = size * 0.3;
+  const bar = `<line x1="${(cx - half).toFixed(1)}" y1="${cy.toFixed(1)}" x2="${(cx + half).toFixed(1)}" y2="${cy.toFixed(1)}" stroke="#000000" stroke-width="1"/>`;
+  const stem = collapsed
+    ? `<line x1="${cx.toFixed(1)}" y1="${(cy - half).toFixed(1)}" x2="${cx.toFixed(1)}" y2="${(cy + half).toFixed(1)}" stroke="#000000" stroke-width="1"/>`
+    : "";
+  return (
+    `<rect x="${x.toFixed(1)}" y="${y.toFixed(1)}" width="${size.toFixed(1)}" height="${size.toFixed(1)}" ` +
+    `fill="#ffffff" stroke="#000000" stroke-width="1"/>${bar}${stem}`
+  );
+}
+
+/**
  * Clips an edge endpoint to a node's real perimeter (ellipse/rhombus/
  * hexagon), falling back to `clipToRect` for `"rect"` or any unhandled
  * shape (issue #35: `mxPerimeter.js`-equivalent perimeter math, replacing
@@ -418,6 +442,38 @@ function clipToShape(
 /** Builds a `<polygon points="...">` string from a flat array of [x,y] pairs. */
 function polygonPoints(points: Array<[number, number]>): string {
   return points.map(([px, py]) => `${px.toFixed(1)},${py.toFixed(1)}`).join(" ");
+}
+
+/**
+ * Builds a smooth SVG path `d` string through an already-routed point
+ * array (issue #53, sub-item 2a `curved=1`). Draw.io's `curved=1` smooths
+ * whatever points the edge style already produced (straight, orthogonal,
+ * or explicit waypoints) into a curve rather than sharp straight
+ * segments; this does NOT change routing/point-computation, only how the
+ * same points are painted. Uses quadratic Bezier segments through the
+ * midpoints between consecutive points (a common simple smoothing
+ * technique), with each original point as the control point pulling the
+ * curve toward it.
+ */
+function curvedPath(points: Array<[number, number]>): string {
+  const [firstX, firstY] = points[0]!;
+  if (points.length < 3) {
+    // Nothing to smooth with only 2 points; fall back to a straight
+    // single-segment path.
+    const [lastX, lastY] = points[points.length - 1]!;
+    return `M ${firstX.toFixed(1)} ${firstY.toFixed(1)} L ${lastX.toFixed(1)} ${lastY.toFixed(1)}`;
+  }
+  const segments: string[] = [`M ${firstX.toFixed(1)} ${firstY.toFixed(1)}`];
+  for (let i = 1; i < points.length - 1; i++) {
+    const [cx, cy] = points[i]!;
+    const [nx, ny] = points[i + 1]!;
+    const midX = (cx + nx) / 2;
+    const midY = (cy + ny) / 2;
+    segments.push(`Q ${cx.toFixed(1)} ${cy.toFixed(1)} ${midX.toFixed(1)} ${midY.toFixed(1)}`);
+  }
+  const [lastX, lastY] = points[points.length - 1]!;
+  segments.push(`L ${lastX.toFixed(1)} ${lastY.toFixed(1)}`);
+  return segments.join(" ");
 }
 
 function escapeXml(text: string): string {
@@ -1606,13 +1662,17 @@ function renderPage(
     const markerAttrs =
       `${startMarker ? ` marker-start="url(#${startMarker})"` : ""}` +
       `${endMarker ? ` marker-end="url(#${endMarker})"` : ""}`;
+    const isCurved = style.properties.curved === "1";
     const shape =
-      waypoints.length > 0
-        ? `<polyline points="${polygonPoints(allPoints)}" fill="none" stroke="${stroke}" ` +
+      isCurved && allPoints.length >= 2
+        ? `<path d="${curvedPath(allPoints)}" fill="none" stroke="${stroke}" ` +
           `stroke-width="${strokeWidth}" stroke-opacity="${strokeOpacity}"${dashArray}${markerAttrs}/>`
-        : `<line x1="${p1x.toFixed(1)}" y1="${p1y.toFixed(1)}" x2="${p2x.toFixed(1)}" ` +
-          `y2="${p2y.toFixed(1)}" stroke="${stroke}" stroke-width="${strokeWidth}" ` +
-          `stroke-opacity="${strokeOpacity}"${dashArray}${markerAttrs}/>`;
+        : waypoints.length > 0
+          ? `<polyline points="${polygonPoints(allPoints)}" fill="none" stroke="${stroke}" ` +
+            `stroke-width="${strokeWidth}" stroke-opacity="${strokeOpacity}"${dashArray}${markerAttrs}/>`
+          : `<line x1="${p1x.toFixed(1)}" y1="${p1y.toFixed(1)}" x2="${p2x.toFixed(1)}" ` +
+            `y2="${p2y.toFixed(1)}" stroke="${stroke}" stroke-width="${strokeWidth}" ` +
+            `stroke-opacity="${strokeOpacity}"${dashArray}${markerAttrs}/>`;
     if (edgeId) {
       svgById.set(edgeId, glow === "filter" ? `<g filter="url(#softGlow)">${shape}</g>` : shape);
     }
@@ -2009,6 +2069,21 @@ function renderPage(
             `stroke="${separatorColor}" stroke-width="${strokeWidth}"/>`;
         cellSvg.push(separatorLine);
       }
+      // Collapse/expand fold glyph (issue #57, 6d): real draw.io paints a
+      // small "+"-in-a-box icon in a collapsed swimlane/container's title
+      // bar (mxSwimlane.paintFoldIcon()) so a static export still visually
+      // communicates that children are hidden. Only the collapsed -> "+"
+      // case is implemented here; the expanded-but-collapsible -> "-" case
+      // is intentionally out of scope (see PRD/issue notes) to keep this
+      // fix minimal, since `collapsed="1"` is what actually suppresses
+      // child rendering above and is the state a viewer most needs a cue
+      // for.
+      if (style.properties.collapsed === "1") {
+        const glyphSize = Math.min(16, titleW, titleH);
+        if (glyphSize > 0) {
+          cellSvg.push(collapseGlyph(x + 2, y + 2, glyphSize, true));
+        }
+      }
     } else {
       const rect =
         `<rect x="${x}" y="${y}" width="${w}" height="${h}" rx="${rx}" ` +
@@ -2098,6 +2173,16 @@ function renderPage(
       textY -= ((lines.length - 1) * lineHeight) / 2;
     }
 
+    // Everything pushed to `cellSvg` from here on is label/text markup.
+    // Real draw.io's flipH/flipV mirrors a shape's own geometry but keeps
+    // its label text upright/readable (mxText is a separate shape state
+    // that ignores the vertex's own flip) - verified against the real
+    // draw.io web app: a flipped triangle's label still reads normally,
+    // not mirrored. Remember this split point so the flip transform below
+    // can be applied to the shape portion only, not this label portion
+    // (issue #57 follow-up correction).
+    const shapeSvgLength = cellSvg.length;
+
     // Renders a line's body as either plain escaped text or, when it
     // carries multi-styled inline runs (issue #56), sibling `<tspan>`s
     // each with their own bold/italic attributes.
@@ -2158,13 +2243,39 @@ function renderPage(
     });
 
     const rotation = Number.parseFloat(style.properties.rotation ?? "0");
-    if (!Number.isNaN(rotation) && rotation !== 0) {
-      const cx = x + w / 2;
-      const cy = y + h / 2;
-      svgById.set(id, `<g transform="rotate(${rotation} ${cx} ${cy})">${cellSvg.join("")}</g>`);
-    } else {
-      svgById.set(id, cellSvg.join(""));
-    }
+    const flipH = style.properties.flipH === "1";
+    const flipV = style.properties.flipV === "1";
+    const rotateTransform =
+      !Number.isNaN(rotation) && rotation !== 0
+        ? `rotate(${rotation} ${x + w / 2} ${y + h / 2})`
+        : "";
+    const flipTransform =
+      flipH || flipV
+        ? // mxgraph applies flip in the shape's own local coordinate
+          // space before rotation, so this is prepended ahead of the
+          // rotate() below (issue #57, sub-item 6a).
+          `translate(${x + w / 2} ${y + h / 2}) scale(${flipH ? -1 : 1} ${flipV ? -1 : 1}) translate(${-(x + w / 2)} ${-(y + h / 2)})`
+        : "";
+    const shapeSvg = cellSvg.slice(0, shapeSvgLength);
+    const labelSvg = cellSvg.slice(shapeSvgLength);
+    // Flip mirrors the shape's own geometry only, never its label text -
+    // real draw.io keeps a flipped shape's label upright/readable, unlike
+    // this file's previous flipH/flipV fix which wrapped the whole cell
+    // (shape + label) in one transform and mirrored the text into
+    // unreadable backwards glyphs (caught via a real draw.io comparison
+    // during E2E verification, not by the original unit tests - those
+    // only covered label-less cells). Rotation still applies to both.
+    const shapeTransforms = [flipTransform, rotateTransform].filter(Boolean).join(" ");
+    const wrappedShape = shapeTransforms
+      ? `<g transform="${shapeTransforms}">${shapeSvg.join("")}</g>`
+      : shapeSvg.join("");
+    const wrappedLabel =
+      labelSvg.length === 0
+        ? ""
+        : rotateTransform
+          ? `<g transform="${rotateTransform}">${labelSvg.join("")}</g>`
+          : labelSvg.join("");
+    svgById.set(id, wrappedShape + wrappedLabel);
   }
 
   // Real draw.io paints cells in document/z-order (later-declared cells on
