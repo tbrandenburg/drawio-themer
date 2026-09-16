@@ -387,6 +387,30 @@ function actorPath(x: number, y: number, w: number, h: number): string {
 }
 
 /**
+ * Draws real draw.io's small collapse/expand indicator (mxSwimlane's
+ * folding icon painted by `mxSwimlane.paintFoldIcon()`): a bordered square
+ * in the title bar's top-left corner containing a "+" (collapsed, meaning
+ * "click to expand") or "-" (expanded, meaning "click to collapse") glyph.
+ * Purely cosmetic for a static export - there is no click handler here,
+ * only the icon drawn. `x`/`y` is the icon's top-left corner and `size`
+ * its width/height (real draw.io uses a fixed 16px `mxConstants.FOLD_ICON`
+ * -like square regardless of the swimlane's own size, kept simple here).
+ */
+function collapseGlyph(x: number, y: number, size: number, collapsed: boolean): string {
+  const cx = x + size / 2;
+  const cy = y + size / 2;
+  const half = size * 0.3;
+  const bar = `<line x1="${(cx - half).toFixed(1)}" y1="${cy.toFixed(1)}" x2="${(cx + half).toFixed(1)}" y2="${cy.toFixed(1)}" stroke="#000000" stroke-width="1"/>`;
+  const stem = collapsed
+    ? `<line x1="${cx.toFixed(1)}" y1="${(cy - half).toFixed(1)}" x2="${cx.toFixed(1)}" y2="${(cy + half).toFixed(1)}" stroke="#000000" stroke-width="1"/>`
+    : "";
+  return (
+    `<rect x="${x.toFixed(1)}" y="${y.toFixed(1)}" width="${size.toFixed(1)}" height="${size.toFixed(1)}" ` +
+    `fill="#ffffff" stroke="#000000" stroke-width="1"/>${bar}${stem}`
+  );
+}
+
+/**
  * Clips an edge endpoint to a node's real perimeter (ellipse/rhombus/
  * hexagon), falling back to `clipToRect` for `"rect"` or any unhandled
  * shape (issue #35: `mxPerimeter.js`-equivalent perimeter math, replacing
@@ -2008,6 +2032,21 @@ function renderPage(
           : `<line x1="${x}" y1="${y + titleH}" x2="${x + w}" y2="${y + titleH}" ` +
             `stroke="${separatorColor}" stroke-width="${strokeWidth}"/>`;
         cellSvg.push(separatorLine);
+      }
+      // Collapse/expand fold glyph (issue #57, 6d): real draw.io paints a
+      // small "+"-in-a-box icon in a collapsed swimlane/container's title
+      // bar (mxSwimlane.paintFoldIcon()) so a static export still visually
+      // communicates that children are hidden. Only the collapsed -> "+"
+      // case is implemented here; the expanded-but-collapsible -> "-" case
+      // is intentionally out of scope (see PRD/issue notes) to keep this
+      // fix minimal, since `collapsed="1"` is what actually suppresses
+      // child rendering above and is the state a viewer most needs a cue
+      // for.
+      if (style.properties.collapsed === "1") {
+        const glyphSize = Math.min(16, titleW, titleH);
+        if (glyphSize > 0) {
+          cellSvg.push(collapseGlyph(x + 2, y + 2, glyphSize, true));
+        }
       }
     } else {
       const rect =
