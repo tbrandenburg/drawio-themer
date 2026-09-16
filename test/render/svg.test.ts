@@ -1211,6 +1211,57 @@ describe("renderDrawioToSvg", () => {
     expect(svg).toContain('<g transform="rotate(45 25 25)">');
   });
 
+  it("applies a horizontal flip transform to a node with flipH=1 (issue #57)", () => {
+    const xml = drawio(
+      '<mxCell id="0"/><mxCell id="1" parent="0"/>' +
+        '<mxCell id="n1" style="flipH=1;" vertex="1" parent="1">' +
+        '<mxGeometry x="0" y="0" width="50" height="50" as="geometry"/></mxCell>',
+    );
+
+    const svg = renderDrawioToSvg(xml);
+
+    expect(svg).toContain('<g transform="translate(25 25) scale(-1 1) translate(-25 -25)">');
+  });
+
+  it("applies a vertical flip transform to a node with flipV=1 (issue #57)", () => {
+    const xml = drawio(
+      '<mxCell id="0"/><mxCell id="1" parent="0"/>' +
+        '<mxCell id="n1" style="flipV=1;" vertex="1" parent="1">' +
+        '<mxGeometry x="0" y="0" width="50" height="50" as="geometry"/></mxCell>',
+    );
+
+    const svg = renderDrawioToSvg(xml);
+
+    expect(svg).toContain('<g transform="translate(25 25) scale(1 -1) translate(-25 -25)">');
+  });
+
+  it("composes flipH, flipV and rotation into a single transform (issue #57)", () => {
+    const xml = drawio(
+      '<mxCell id="0"/><mxCell id="1" parent="0"/>' +
+        '<mxCell id="n1" style="flipH=1;flipV=1;rotation=45;" vertex="1" parent="1">' +
+        '<mxGeometry x="0" y="0" width="50" height="50" as="geometry"/></mxCell>',
+    );
+
+    const svg = renderDrawioToSvg(xml);
+
+    expect(svg).toContain(
+      '<g transform="translate(25 25) scale(-1 -1) translate(-25 -25) rotate(45 25 25)">',
+    );
+  });
+
+  it("does not add a flip transform for a cell without flipH/flipV (no regression, issue #57)", () => {
+    const xml = drawio(
+      '<mxCell id="0"/><mxCell id="1" parent="0"/>' +
+        '<mxCell id="n1" style="" vertex="1" parent="1">' +
+        '<mxGeometry x="0" y="0" width="50" height="50" as="geometry"/></mxCell>',
+    );
+
+    const svg = renderDrawioToSvg(xml);
+
+    expect(svg).not.toContain("scale(-1");
+    expect(svg).not.toContain("scale(1 -1");
+  });
+
   it("shifts negative-coordinate content back onto the canvas instead of clipping it (issue #15)", () => {
     const xml = drawio(
       '<mxCell id="0"/><mxCell id="1" parent="0"/>' +
