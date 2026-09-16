@@ -167,6 +167,19 @@ describe("renderDrawioToSvg", () => {
     expect(svg).toContain('rx="15"');
   });
 
+  it("defaults a plain rounded=1 rect with no arcSize to RECTANGLE_ROUNDING_FACTOR*min(w,h) instead of 0 (issue #54)", () => {
+    const xml = drawio(
+      '<mxCell id="0"/><mxCell id="1" parent="0"/>' +
+        '<mxCell id="n1" value="Box" style="rounded=1;" ' +
+        'vertex="1" parent="1"><mxGeometry x="0" y="0" width="100" height="70" as="geometry"/></mxCell>',
+    );
+
+    const svg = renderDrawioToSvg(xml);
+
+    // 0.15 * min(100,70)=70 = 10.5, matching real draw.io's default arc.
+    expect(svg).toContain('rx="10.5"');
+  });
+
   it("keeps square corners for a swimlane container without rounded=1 (issue #39)", () => {
     const xml = drawio(
       '<mxCell id="0"/><mxCell id="1" parent="0"/>' +
@@ -1344,5 +1357,43 @@ describe("renderDrawioToSvg gradientColor/gradientDirection", () => {
 
     expect(svg).not.toContain("<linearGradient");
     expect(svg).toContain('fill="#ff0000"');
+  });
+
+  it("resolves fontColor=default to the ambient default instead of emitting the literal string (issue #54)", () => {
+    const xml = drawio(
+      '<mxCell id="0"/><mxCell id="1" parent="0"/>' +
+        '<mxCell id="n1" value="Box" style="fontColor=default;" ' +
+        'vertex="1" parent="1"><mxGeometry x="0" y="0" width="80" height="40" as="geometry"/></mxCell>',
+    );
+
+    const svg = renderDrawioToSvg(xml);
+
+    expect(svg).not.toContain("default");
+    expect(svg).toContain('fill="#000000"');
+  });
+
+  it("resolves strokeColor=default to the ambient default instead of emitting the literal string (issue #54)", () => {
+    const xml = drawio(
+      '<mxCell id="0"/><mxCell id="1" parent="0"/>' +
+        '<mxCell id="n1" value="Box" style="strokeColor=default;" ' +
+        'vertex="1" parent="1"><mxGeometry x="0" y="0" width="80" height="40" as="geometry"/></mxCell>',
+    );
+
+    const svg = renderDrawioToSvg(xml);
+
+    expect(svg).not.toContain("default");
+    expect(svg).toContain('stroke="#000000"');
+  });
+
+  it("defaults a missing fontSize to 11 (mxgraph's DEFAULT_FONTSIZE), not 12 (issue #54)", () => {
+    const xml = drawio(
+      '<mxCell id="0"/><mxCell id="1" parent="0"/>' +
+        '<mxCell id="n1" value="Box" style="" ' +
+        'vertex="1" parent="1"><mxGeometry x="0" y="0" width="80" height="40" as="geometry"/></mxCell>',
+    );
+
+    const svg = renderDrawioToSvg(xml);
+
+    expect(svg).toContain('font-size="11"');
   });
 });
