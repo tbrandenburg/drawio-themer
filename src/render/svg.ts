@@ -563,6 +563,36 @@ function renderPage(
     return gid;
   }
 
+  // Real mxgraph's gradient direction vectors (mxShape.js paints
+  // `gradientDirection` as one of 4 axis-aligned vectors across the
+  // shape's own bounding box), "south" (top -> bottom) is the default
+  // when the property is unset.
+  const GRADIENT_VECTORS: Record<string, { x1: string; y1: string; x2: string; y2: string }> = {
+    south: { x1: "0", y1: "0", x2: "0", y2: "1" },
+    north: { x1: "0", y1: "1", x2: "0", y2: "0" },
+    east: { x1: "0", y1: "0", x2: "1", y2: "0" },
+    west: { x1: "1", y1: "0", x2: "0", y2: "0" },
+  };
+
+  // Renders a real draw.io `gradientColor`/`gradientDirection` gradient
+  // (as opposed to `gradientFor` above, which is only the internal
+  // `--glow` flag's synthetic lighten-tint gradient).
+  function gradientForColors(fill: string, gradientColor: string, direction: string): string {
+    const key = `${fill}|${gradientColor}|${direction}`;
+    const existing = gradientIds.get(key);
+    if (existing) return existing;
+    const gid = `grad${gradientIds.size}`;
+    gradientIds.set(key, gid);
+    const vector = GRADIENT_VECTORS[direction] ?? GRADIENT_VECTORS.south!;
+    defs.push(
+      `<linearGradient id="${gid}" x1="${vector.x1}" y1="${vector.y1}" x2="${vector.x2}" y2="${vector.y2}">` +
+        `<stop offset="0" stop-color="${fill}"/>` +
+        `<stop offset="1" stop-color="${gradientColor}"/>` +
+        "</linearGradient>",
+    );
+    return gid;
+  }
+
   /**
    * A child cell's `<mxGeometry x y>` is relative to its parent cell (e.g.
    * a swimlane/container), not the page, in draw.io's format. Walk up the
@@ -1114,7 +1144,13 @@ function renderPage(
       (isItalic ? ' font-style="italic"' : "") +
       (isUnderline ? ' text-decoration="underline"' : "");
     let textY = valign === "top" ? y + 18 : y + h / 2 + 5;
-    const fillRef = glow === "filter" ? `url(#${gradientFor(fill)})` : fill;
+    const gradientColor = style.properties.gradientColor;
+    const gradientDirection = style.properties.gradientDirection ?? "south";
+    const fillRef = gradientColor
+      ? `url(#${gradientForColors(fill, gradientColor, gradientDirection)})`
+      : glow === "filter"
+        ? `url(#${gradientFor(fill)})`
+        : fill;
     const dashArray = dashArrayAttr(style);
     const { fill: fillOpacity, stroke: strokeOpacity } = opacities(style);
     // Collect this cell's shape + label markup separately so an optional
@@ -1196,9 +1232,11 @@ function renderPage(
       const bodyFillRef =
         bodyFill === undefined
           ? "none"
-          : glow === "filter"
-            ? `url(#${gradientFor(bodyFill)})`
-            : bodyFill;
+          : gradientColor
+            ? `url(#${gradientForColors(bodyFill, gradientColor, gradientDirection)})`
+            : glow === "filter"
+              ? `url(#${gradientFor(bodyFill)})`
+              : bodyFill;
       const titleRect =
         `<rect x="${x}" y="${y}" width="${titleW}" height="${titleH}" rx="${rx}" ` +
         `fill="${fillRef}" fill-opacity="${fillOpacity}" stroke="${stroke}" ` +

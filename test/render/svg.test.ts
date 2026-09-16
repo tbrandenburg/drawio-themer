@@ -1172,3 +1172,82 @@ describe("convertWebpImagesToPng", () => {
     expect(converted).toBe(xml);
   });
 });
+
+describe("renderDrawioToSvg gradientColor/gradientDirection", () => {
+  it("renders a top-to-bottom linearGradient when gradientDirection is unset (south default)", () => {
+    const xml = drawio(
+      '<mxCell id="0"/><mxCell id="1" parent="0"/>' +
+        '<mxCell id="n1" value="Box" style="fillColor=#ff0000;gradientColor=#0000ff;" ' +
+        'vertex="1" parent="1"><mxGeometry x="0" y="0" width="80" height="40" as="geometry"/></mxCell>',
+    );
+
+    const svg = renderDrawioToSvg(xml);
+
+    expect(svg).toMatch(/<linearGradient id="grad0" x1="0" y1="0" x2="0" y2="1">/);
+    expect(svg).toContain('<stop offset="0" stop-color="#ff0000"/>');
+    expect(svg).toContain('<stop offset="1" stop-color="#0000ff"/>');
+    expect(svg).toContain('fill="url(#grad0)"');
+  });
+
+  it("renders a bottom-to-top linearGradient for gradientDirection=north", () => {
+    const xml = drawio(
+      '<mxCell id="0"/><mxCell id="1" parent="0"/>' +
+        '<mxCell id="n1" value="Box" style="fillColor=#ff0000;gradientColor=#0000ff;gradientDirection=north;" ' +
+        'vertex="1" parent="1"><mxGeometry x="0" y="0" width="80" height="40" as="geometry"/></mxCell>',
+    );
+
+    const svg = renderDrawioToSvg(xml);
+
+    expect(svg).toMatch(/<linearGradient id="grad0" x1="0" y1="1" x2="0" y2="0">/);
+  });
+
+  it("renders a left-to-right linearGradient for gradientDirection=east", () => {
+    const xml = drawio(
+      '<mxCell id="0"/><mxCell id="1" parent="0"/>' +
+        '<mxCell id="n1" value="Box" style="fillColor=#ff0000;gradientColor=#0000ff;gradientDirection=east;" ' +
+        'vertex="1" parent="1"><mxGeometry x="0" y="0" width="80" height="40" as="geometry"/></mxCell>',
+    );
+
+    const svg = renderDrawioToSvg(xml);
+
+    expect(svg).toMatch(/<linearGradient id="grad0" x1="0" y1="0" x2="1" y2="0">/);
+  });
+
+  it("renders a right-to-left linearGradient for gradientDirection=west", () => {
+    const xml = drawio(
+      '<mxCell id="0"/><mxCell id="1" parent="0"/>' +
+        '<mxCell id="n1" value="Box" style="fillColor=#ff0000;gradientColor=#0000ff;gradientDirection=west;" ' +
+        'vertex="1" parent="1"><mxGeometry x="0" y="0" width="80" height="40" as="geometry"/></mxCell>',
+    );
+
+    const svg = renderDrawioToSvg(xml);
+
+    expect(svg).toMatch(/<linearGradient id="grad0" x1="1" y1="0" x2="0" y2="0">/);
+  });
+
+  it("triggers gradient rendering without the --glow flag", () => {
+    const xml = drawio(
+      '<mxCell id="0"/><mxCell id="1" parent="0"/>' +
+        '<mxCell id="n1" value="Box" style="fillColor=#ff0000;gradientColor=#0000ff;" ' +
+        'vertex="1" parent="1"><mxGeometry x="0" y="0" width="80" height="40" as="geometry"/></mxCell>',
+    );
+
+    const svg = renderDrawioToSvg(xml, {});
+
+    expect(svg).toContain("<linearGradient");
+    expect(svg).toContain('fill="url(#grad0)"');
+  });
+
+  it("renders a flat solid fill (no gradient) for a cell without gradientColor", () => {
+    const xml = drawio(
+      '<mxCell id="0"/><mxCell id="1" parent="0"/>' +
+        '<mxCell id="n1" value="Box" style="fillColor=#ff0000;" ' +
+        'vertex="1" parent="1"><mxGeometry x="0" y="0" width="80" height="40" as="geometry"/></mxCell>',
+    );
+
+    const svg = renderDrawioToSvg(xml);
+
+    expect(svg).not.toContain("<linearGradient");
+    expect(svg).toContain('fill="#ff0000"');
+  });
+});
