@@ -31,6 +31,11 @@ import { parseStyle } from "../drawio/styles.js";
  */
 export const FONT_FALLBACK_STACK = "Noto Sans, Helvetica Neue, Arial, sans-serif";
 
+// Mirrors mxgraph's mxConstants.LINE_HEIGHT: real draw.io spaces wrapped
+// label lines at ~1.2x the cell's fontSize, not a fixed pixel constant
+// (issue #47).
+const LINE_HEIGHT_FACTOR = 1.2;
+
 /** Whether to draw a soft glow behind nodes/edges using a real SVG `<filter>`. */
 export type GlowMode = "none" | "filter";
 
@@ -1147,16 +1152,26 @@ function renderPage(
       const wrapped = wrap ? wrapLabel(label, w, fontSize, isBold) : label.split("\n");
       lines = wrapped.map((text) => ({ text, fontAttrs }));
     }
+
+    // Center the whole multi-line block around the single-line textY
+    // (rather than pinning the first line there and pushing later lines
+    // further down), matching mxgraph's mxText.js block-centering for
+    // verticalAlign=middle. Top-aligned labels grow downward as before.
+    const lineHeight = (Number.parseFloat(fontSize) || 12) * LINE_HEIGHT_FACTOR;
+    if (valign !== "top") {
+      textY -= ((lines.length - 1) * lineHeight) / 2;
+    }
+
     lines.forEach(({ text: line, fontAttrs: lineFontAttrs }, i) => {
       if (rotatedLabel) {
         // Rotate about the label's own anchor point so it reads
         // bottom-to-top along the left edge, matching draw.io's
         // horizontal=0 swimlane title convention.
         // Center the whole label block on the mid-point, then offset each
-        // line by i * 14 along the (pre-rotation) x-axis so lines don't
-        // overlap - matches the unrotated branch's `textY + i * 14` offset,
-        // just applied before the -90deg rotation is applied.
-        const px = x + 16 + spacingLeft + i * 14;
+        // line by i * lineHeight along the (pre-rotation) x-axis so lines
+        // don't overlap - matches the unrotated branch's `textY + i *
+        // lineHeight` offset, just applied before the -90deg rotation.
+        const px = x + 16 + spacingLeft + i * lineHeight;
         const py = y + h / 2;
         cellSvg.push(
           `<text x="${px.toFixed(1)}" y="${py.toFixed(1)}" text-anchor="middle" ` +
@@ -1177,7 +1192,7 @@ function renderPage(
       }
 
       cellSvg.push(
-        `<text x="${textX}" y="${textY + i * 14}" text-anchor="${textAnchor}" ` +
+        `<text x="${textX}" y="${textY + i * lineHeight}" text-anchor="${textAnchor}" ` +
           `font-family="${fontFamily}" font-size="${fontSize}" fill="${fontColor}"${lineFontAttrs}>${escapeXml(line)}</text>`,
       );
     });

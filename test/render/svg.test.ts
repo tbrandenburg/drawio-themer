@@ -657,6 +657,63 @@ describe("renderDrawioToSvg", () => {
     expect(textCount).toBeGreaterThan(1);
   });
 
+  it("scales multi-line spacing with fontSize instead of a fixed 14px constant (issue #47)", () => {
+    const twoLineXml = (fontSize: number) =>
+      drawio(
+        '<mxCell id="0"/><mxCell id="1" parent="0"/>' +
+          `<mxCell id="n1" value="Line one&#xa;Line two" ` +
+          `style="whiteSpace=wrap;fontSize=${fontSize};" vertex="1" parent="1">` +
+          '<mxGeometry x="0" y="0" width="100" height="100" as="geometry"/></mxCell>',
+      );
+
+    const ys = (svg: string): number[] =>
+      [...svg.matchAll(/<text[^>]* y="([\d.-]+)"/g)].map((m) => Number(m[1]));
+
+    const spacingAt = (fontSize: number): number => {
+      const [y0, y1] = ys(renderDrawioToSvg(twoLineXml(fontSize)));
+      expect(y1).toBeDefined();
+      return y1 - y0;
+    };
+
+    const spacing12 = spacingAt(12);
+    const spacing24 = spacingAt(24);
+
+    // Fixed-14px behaviour would produce identical spacing regardless of
+    // fontSize; the fontSize-derived line height must scale with it.
+    expect(spacing12).toBeCloseTo(12 * 1.2, 5);
+    expect(spacing24).toBeCloseTo(24 * 1.2, 5);
+    expect(spacing24).toBeGreaterThan(spacing12);
+  });
+
+  it("centers a multi-line block around the single-line vertical center for verticalAlign=middle (issue #47)", () => {
+    const singleLineXml = drawio(
+      '<mxCell id="0"/><mxCell id="1" parent="0"/>' +
+        '<mxCell id="n1" value="One line" ' +
+        'style="whiteSpace=wrap;fontSize=24;" vertex="1" parent="1">' +
+        '<mxGeometry x="0" y="0" width="100" height="100" as="geometry"/></mxCell>',
+    );
+    const twoLineXml = drawio(
+      '<mxCell id="0"/><mxCell id="1" parent="0"/>' +
+        '<mxCell id="n1" value="Line one&#xa;Line two" ' +
+        'style="whiteSpace=wrap;fontSize=24;" vertex="1" parent="1">' +
+        '<mxGeometry x="0" y="0" width="100" height="100" as="geometry"/></mxCell>',
+    );
+
+    const singleY = Number(renderDrawioToSvg(singleLineXml).match(/<text[^>]* y="([\d.-]+)"/)?.[1]);
+    const twoLineYs = [...renderDrawioToSvg(twoLineXml).matchAll(/<text[^>]* y="([\d.-]+)"/g)].map(
+      (m) => Number(m[1]),
+    );
+    const [firstY, secondY] = twoLineYs;
+
+    const lineHeight = 24 * 1.2;
+    // The 2-line block must be centered on the single-line y, i.e. the
+    // first line sits half a line-height above it and the second half a
+    // line-height below - not pinned at the single-line y with the second
+    // line pushed further down.
+    expect(firstY).toBeCloseTo(singleY - lineHeight / 2, 5);
+    expect(secondY).toBeCloseTo(singleY + lineHeight / 2, 5);
+  });
+
   it("does not wrap a label when whiteSpace=wrap is absent, even if it overflows", () => {
     const xml = drawio(
       '<mxCell id="0"/><mxCell id="1" parent="0"/>' +
