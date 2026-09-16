@@ -1061,6 +1061,46 @@ function renderPage(
       cellSvg.push(
         glow === "filter" ? `<g filter="url(#softGlow)">${hexagon}</g>${hexagon}` : hexagon,
       );
+    } else if (
+      isContainer(cell) &&
+      (Number.parseFloat(style.properties.startSize ?? "0") || 0) > 0
+    ) {
+      // Real draw.io's mxSwimlane only fills the title-bar strip
+      // (startSize-wide/tall) with `fillColor`; the body region past it is
+      // left unfilled (page background shows through) unless the style
+      // explicitly sets `swimlaneFillColor` (issue #42, mxSwimlane.js
+      // `apply()`/`paintRoundedSwimlane()`). Only the outer corners of each
+      // region are rounded in real draw.io - the seam between title and
+      // body is a straight internal edge - but this offline renderer
+      // reuses the single `rx` computed above on both rects for
+      // simplicity, matching this project's documented "approximate, not
+      // pixel-perfect" rendering tradeoffs.
+      const startSize = Math.max(0, Number.parseFloat(style.properties.startSize ?? "0") || 0);
+      const rotatedTitle = style.properties.horizontal === "0";
+      const titleW = rotatedTitle ? Math.min(startSize, w) : w;
+      const titleH = rotatedTitle ? h : Math.min(startSize, h);
+      const bodyFill = style.properties.swimlaneFillColor;
+      const bodyFillRef =
+        bodyFill === undefined
+          ? "none"
+          : glow === "filter"
+            ? `url(#${gradientFor(bodyFill)})`
+            : bodyFill;
+      const titleRect =
+        `<rect x="${x}" y="${y}" width="${titleW}" height="${titleH}" rx="${rx}" ` +
+        `fill="${fillRef}" fill-opacity="${fillOpacity}" stroke="${stroke}" ` +
+        `stroke-width="${strokeWidth}" stroke-opacity="${strokeOpacity}"${dashArray}/>`;
+      const bodyRect = rotatedTitle
+        ? `<rect x="${x + titleW}" y="${y}" width="${w - titleW}" height="${h}" rx="${rx}" ` +
+          `fill="${bodyFillRef}" fill-opacity="${fillOpacity}" stroke="${stroke}" ` +
+          `stroke-width="${strokeWidth}" stroke-opacity="${strokeOpacity}"${dashArray}/>`
+        : `<rect x="${x}" y="${y + titleH}" width="${w}" height="${h - titleH}" rx="${rx}" ` +
+          `fill="${bodyFillRef}" fill-opacity="${fillOpacity}" stroke="${stroke}" ` +
+          `stroke-width="${strokeWidth}" stroke-opacity="${strokeOpacity}"${dashArray}/>`;
+      cellSvg.push(
+        glow === "filter" ? `<g filter="url(#softGlow)">${titleRect}</g>${titleRect}` : titleRect,
+      );
+      cellSvg.push(bodyRect);
     } else {
       const rect =
         `<rect x="${x}" y="${y}" width="${w}" height="${h}" rx="${rx}" ` +
