@@ -146,17 +146,23 @@ function escapeXml(text: string): string {
 const NARROW_CHARS = /[iIl.,:;'"!|]/;
 const WIDE_CHARS = /[mwMW@%]/;
 
-function estimateTextWidth(text: string, size: number): number {
+// Bold glyphs render measurably wider than regular weight at the same
+// font size (issue #37); widen the flat per-character estimate by this
+// factor when the label is bold so labels near the wrap threshold don't
+// overflow their box.
+const BOLD_WIDTH_MULTIPLIER = 1.15;
+
+function estimateTextWidth(text: string, size: number, bold = false): number {
   let width = 0;
   for (const ch of text) {
     if (NARROW_CHARS.test(ch)) width += size * 0.3;
     else if (WIDE_CHARS.test(ch)) width += size * 0.8;
     else width += size * 0.5;
   }
-  return width;
+  return bold ? width * BOLD_WIDTH_MULTIPLIER : width;
 }
 
-function wrapLabel(label: string, width: number, fontSize: string): string[] {
+function wrapLabel(label: string, width: number, fontSize: string, bold = false): string[] {
   const size = Number.parseFloat(fontSize) || 12;
 
   const wrapped: string[] = [];
@@ -164,7 +170,7 @@ function wrapLabel(label: string, width: number, fontSize: string): string[] {
     // Explicit, author-authored line breaks are hard breaks: only
     // re-wrap this paragraph if it actually overflows the available
     // width on its own (issue #30).
-    if (estimateTextWidth(paragraph, size) <= width) {
+    if (estimateTextWidth(paragraph, size, bold) <= width) {
       wrapped.push(paragraph);
       continue;
     }
@@ -173,7 +179,7 @@ function wrapLabel(label: string, width: number, fontSize: string): string[] {
     let current = "";
     for (const word of words) {
       const candidate = current ? `${current} ${word}` : word;
-      if (estimateTextWidth(candidate, size) > width && current) {
+      if (estimateTextWidth(candidate, size, bold) > width && current) {
         wrapped.push(current);
         current = word;
       } else {
@@ -847,7 +853,7 @@ function renderPage(
     }
 
     const wrap = style.properties.whiteSpace === "wrap";
-    const lines = wrap ? wrapLabel(plainLabel, w, fontSize) : plainLabel.split("\n");
+    const lines = wrap ? wrapLabel(plainLabel, w, fontSize, isBold) : plainLabel.split("\n");
     lines.forEach((line, i) => {
       if (rotatedLabel) {
         // Rotate about the label's own anchor point so it reads
