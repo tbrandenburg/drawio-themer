@@ -276,6 +276,20 @@ describe("renderDrawioToSvg", () => {
     expect(svg).not.toMatch(/<rect x="0" y="0"/);
   });
 
+  it("renders a text; cell with no <rect> box at all (issue #29)", () => {
+    const xml = drawio(
+      '<mxCell id="0"/><mxCell id="1" parent="0"/>' +
+        '<mxCell id="n1" value="Footer" ' +
+        'style="text;html=1;align=center;verticalAlign=middle;fontSize=11;fontColor=#63738A;" ' +
+        'vertex="1" parent="1"><mxGeometry x="90" y="840" width="210" height="50" as="geometry"/></mxCell>',
+    );
+
+    const svg = renderDrawioToSvg(xml);
+
+    expect(svg).not.toMatch(/<rect x="90" y="840"/);
+    expect(svg).toContain("Footer");
+  });
+
   it("renders a rhombus shape as a diamond <polygon>, not a generic rect", () => {
     const xml = drawio(
       '<mxCell id="0"/><mxCell id="1" parent="0"/>' +
@@ -384,6 +398,20 @@ describe("renderDrawioToSvg", () => {
 
     const textCount = (svg.match(/<text /g) ?? []).length;
     expect(textCount).toBeGreaterThan(1);
+  });
+
+  it("does not re-wrap an already-line-broken label that fits each line (issue #30)", () => {
+    const xml = drawio(
+      '<mxCell id="0"/><mxCell id="1" parent="0"/>' +
+        '<mxCell id="n1" value="Automation &amp;&#xa;Workflows" ' +
+        'style="whiteSpace=wrap;fontSize=14;" vertex="1" parent="1">' +
+        '<mxGeometry x="0" y="0" width="100" height="70" as="geometry"/></mxCell>',
+    );
+
+    const svg = renderDrawioToSvg(xml);
+
+    const textCount = (svg.match(/<text /g) ?? []).length;
+    expect(textCount).toBe(2);
   });
 
   it("does not wrap a label when whiteSpace=wrap is absent, even if it overflows", () => {
