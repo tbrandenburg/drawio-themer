@@ -58,6 +58,27 @@ interface NodeGeometry {
   y: number;
   w: number;
   h: number;
+  /**
+   * The node's perimeter shape kind, used by `connectionPoint` to clip
+   * edge endpoints to the shape's real border instead of always using a
+   * rectangular bounding-box clip (issue #35). Edge label cells (added in
+   * a second pass, see `edgeLabelCells`) have no real shape and default
+   * to `"rect"`, matching the previous behavior for them.
+   */
+  shape: PerimeterShape;
+}
+
+/**
+ * Derives a node's `PerimeterShape` from its parsed style, matching the
+ * same shape-detection tokens used by the node-rendering loop below
+ * (`isEllipse`/`isRhombus`/`isHexagon`).
+ */
+function perimeterShapeOf(style: ReturnType<typeof parseStyle>): PerimeterShape {
+  const shape = style.properties.shape ?? "";
+  if (shape === "ellipse" || style.tokens.includes("ellipse")) return "ellipse";
+  if (shape === "rhombus" || style.tokens.includes("rhombus")) return "rhombus";
+  if (shape === "hexagon") return "hexagon";
+  return "rect";
 }
 
 function childElements(parent: XmlElement, tagName: string): XmlElement[] {
@@ -115,6 +136,129 @@ function clipToRect(
   return [cx + dx * scale, cy + dy * scale];
 }
 
+/**
+ * Perimeter shape kinds this renderer can clip an edge endpoint to,
+ * mirroring mxgraph's `mxPerimeter` functions (`EllipsePerimeter`,
+ * `RhombusPerimeter`, `HexagonPerimeter`) instead of only ever using a
+ * rectangular bounding-box clip (issue #35). `"rect"` (and anything not
+ * otherwise recognized) keeps the existing `clipToRect` behavior.
+ */
+type PerimeterShape = "rect" | "ellipse" | "rhombus" | "hexagon";
+
+/**
+ * Clips the point at the ellipse's boundary along the line from (cx,cy)
+ * [the ellipse's center] toward (ox,oy), matching mxgraph's
+ * `mxPerimeter.EllipsePerimeter`: parametrize the ray as `(cx + dx*t, cy +
+ * dy*t)` and solve for the `t > 0` where `((dx*t)/a)^2 + ((dy*t)/b)^2 = 1`.
+ */
+function clipToEllipse(
+  cx: number,
+  cy: number,
+  ox: number,
+  oy: number,
+  rw: number,
+  rh: number,
+): [number, number] {
+  const dx = ox - cx;
+  const dy = oy - cy;
+  if (dx === 0 && dy === 0) return [cx, cy];
+  const a = rw / 2;
+  const b = rh / 2;
+  if (a === 0 || b === 0) return [cx, cy];
+  const denom = (dx / a) ** 2 + (dy / b) ** 2;
+  const t = 1 / Math.sqrt(denom);
+  return [cx + dx * t, cy + dy * t];
+}
+
+/**
+ * Intersects the ray from (cx,cy) toward (ox,oy) with whichever edge of
+ * the given closed polygon it crosses first, returning that intersection
+ * point. Falls back to (cx,cy) if no edge intersects (degenerate/self-
+ * intersecting polygon), which should not happen for the convex
+ * rhombus/hexagon outlines this renderer builds. Shared by
+ * `clipToRhombus` and `clipToHexagon` (both mxgraph perimeter functions
+ * boil down to "ray vs polygon edges" for a convex outline).
+ */
+function clipToPolygon(
+  cx: number,
+  cy: number,
+  ox: number,
+  oy: number,
+  points: Array<[number, number]>,
+): [number, number] {
+  const dx = ox - cx;
+  const dy = oy - cy;
+  if (dx === 0 && dy === 0) return [cx, cy];
+  for (let i = 0; i < points.length; i++) {
+    const [ax, ay] = points[i]!;
+    const [bx, by] = points[(i + 1) % points.length]!;
+    const ex = bx - ax;
+    const ey = by - ay;
+    const denom = dx * ey - dy * ex;
+    if (denom === 0) continue; // parallel to this edge
+    // Solve cx + dx*t = ax + ex*s ; cy + dy*t = ay + ey*s for t (ray param)
+    // and s (edge param, must be in [0,1] to lie on the segment).
+    const t = ((ax - cx) * ey - (ay - cy) * ex) / denom;
+    const s = ((ax - cx) * dy - (ay - cy) * dx) / denom;
+    if (t >= 0 && s >= 0 && s <= 1) {
+      return [cx + dx * t, cy + dy * t];
+    }
+  }
+  return [cx, cy];
+}
+
+/** The rhombus (diamond) outline mxgraph draws for `rhombus`-shaped cells. */
+function rhombusPoints(x: number, y: number, w: number, h: number): Array<[number, number]> {
+  return [
+    [x + w / 2, y],
+    [x + w, y + h / 2],
+    [x + w / 2, y + h],
+    [x, y + h / 2],
+  ];
+}
+
+/** The hexagon outline this renderer draws for `shape=hexagon` cells (25% inset). */
+function hexagonPoints(x: number, y: number, w: number, h: number): Array<[number, number]> {
+  const inset = w * 0.25;
+  return [
+    [x + inset, y],
+    [x + w - inset, y],
+    [x + w, y + h / 2],
+    [x + w - inset, y + h],
+    [x + inset, y + h],
+    [x, y + h / 2],
+  ];
+}
+
+/**
+ * Clips an edge endpoint to a node's real perimeter (ellipse/rhombus/
+ * hexagon), falling back to `clipToRect` for `"rect"` or any unhandled
+ * shape (issue #35: `mxPerimeter.js`-equivalent perimeter math, replacing
+ * the previous bounding-box-only approximation).
+ */
+function clipToShape(
+  shape: PerimeterShape,
+  cx: number,
+  cy: number,
+  ox: number,
+  oy: number,
+  x: number,
+  y: number,
+  w: number,
+  h: number,
+): [number, number] {
+  switch (shape) {
+    case "ellipse":
+      return clipToEllipse(cx, cy, ox, oy, w, h);
+    case "rhombus":
+      return clipToPolygon(cx, cy, ox, oy, rhombusPoints(x, y, w, h));
+    case "hexagon":
+      return clipToPolygon(cx, cy, ox, oy, hexagonPoints(x, y, w, h));
+    default:
+      return clipToRect(cx, cy, ox, oy, w, h);
+  }
+}
+
 /** Builds a `<polygon points="...">` string from a flat array of [x,y] pairs. */
 function polygonPoints(points: Array<[number, number]>): string {
   return points.map(([px, py]) => `${px.toFixed(1)},${py.toFixed(1)}`).join(" ");
@@ -146,17 +290,23 @@ function escapeXml(text: string): string {
 const NARROW_CHARS = /[iIl.,:;'"!|]/;
 const WIDE_CHARS = /[mwMW@%]/;
 
-function estimateTextWidth(text: string, size: number): number {
+// Bold glyphs render measurably wider than regular weight at the same
+// font size (issue #37); widen the flat per-character estimate by this
+// factor when the label is bold so labels near the wrap threshold don't
+// overflow their box.
+const BOLD_WIDTH_MULTIPLIER = 1.15;
+
+function estimateTextWidth(text: string, size: number, bold = false): number {
   let width = 0;
   for (const ch of text) {
     if (NARROW_CHARS.test(ch)) width += size * 0.3;
     else if (WIDE_CHARS.test(ch)) width += size * 0.8;
     else width += size * 0.5;
   }
-  return width;
+  return bold ? width * BOLD_WIDTH_MULTIPLIER : width;
 }
 
-function wrapLabel(label: string, width: number, fontSize: string): string[] {
+function wrapLabel(label: string, width: number, fontSize: string, bold = false): string[] {
   const size = Number.parseFloat(fontSize) || 12;
 
   const wrapped: string[] = [];
@@ -164,7 +314,7 @@ function wrapLabel(label: string, width: number, fontSize: string): string[] {
     // Explicit, author-authored line breaks are hard breaks: only
     // re-wrap this paragraph if it actually overflows the available
     // width on its own (issue #30).
-    if (estimateTextWidth(paragraph, size) <= width) {
+    if (estimateTextWidth(paragraph, size, bold) <= width) {
       wrapped.push(paragraph);
       continue;
     }
@@ -173,7 +323,7 @@ function wrapLabel(label: string, width: number, fontSize: string): string[] {
     let current = "";
     for (const word of words) {
       const candidate = current ? `${current} ${word}` : word;
-      if (estimateTextWidth(candidate, size) > width && current) {
+      if (estimateTextWidth(candidate, size, bold) > width && current) {
         wrapped.push(current);
         current = word;
       } else {
@@ -185,30 +335,72 @@ function wrapLabel(label: string, width: number, fontSize: string): string[] {
   return wrapped;
 }
 
-/**
- * A label with `html=1` in its style stores real (draw.io-editor-authored)
- * HTML markup as its `value` (e.g. `Line 1<br>Line 2`, `<div>...</div>`,
- * `&amp;`) rather than plain text - draw.io's own renderer feeds this
- * straight into a `foreignObject`/DOM node. This renderer has no HTML
- * layout engine, so instead: turn block-ish/line-break tags into `\n`
- * (consumed by the existing per-line label splitting), strip every other
- * tag, and decode the handful of entities draw.io commonly emits, so at
- * least the plain text content shows up instead of raw `<br>`/`&nbsp;`
- * (issue #17).
- */
-function htmlLabelToPlainText(html: string): string {
-  return html
-    .replace(/<br\s*\/?>/gi, "\n")
-    .replace(/<\/(div|p|li)>/gi, "\n")
-    .replace(/<[^>]+>/g, "")
+function decodeHtmlEntities(text: string): string {
+  return text
     .replace(/&nbsp;/g, " ")
     .replace(/&amp;/g, "&")
     .replace(/&lt;/g, "<")
     .replace(/&gt;/g, ">")
     .replace(/&quot;/g, '"')
-    .replace(/&#39;/g, "'")
-    .replace(/\n{2,}/g, "\n")
-    .trim();
+    .replace(/&#39;/g, "'");
+}
+
+/** One line of an `html=1` label, with an optional per-line bold/italic
+ * override relative to the cell's own `fontStyle` baseline (issue #38). */
+interface HtmlLabelLine {
+  text: string;
+  bold?: boolean;
+  italic?: boolean;
+}
+
+// Matches a line whose *entire* content is wrapped in a single
+// `<span style="...">...</span>` - the line-level-only scope this issue
+// asks for (partial-line/mid-line multi-run spans are explicitly out of
+// scope, see issue #38's "Proposed fix").
+const FULL_LINE_SPAN = /^<span\s+style="([^"]*)"\s*>([\s\S]*)<\/span>$/i;
+
+/**
+ * A label with `html=1` in its style stores real (draw.io-editor-authored)
+ * HTML markup as its `value` (e.g. `Line 1<br>Line 2`, `<div>...</div>`,
+ * `&amp;`) rather than plain text - draw.io's own renderer feeds this
+ * straight into a `foreignObject`/DOM node. This renderer has no HTML
+ * layout engine, so instead: split on block-ish/line-break tags, strip
+ * every other tag, and decode the handful of entities draw.io commonly
+ * emits, so at least the plain text content shows up instead of raw
+ * `<br>`/`&nbsp;` (issue #17).
+ *
+ * A line entirely wrapped in a single `<span style="font-weight: ...">`
+ * and/or `font-style: ...` (e.g. a regular-weight subtitle under a bold
+ * heading) overrides the cell-level bold/italic for that line only
+ * (issue #38) - the span tags themselves are stripped from the visible
+ * text.
+ */
+function parseHtmlLabelLines(html: string): HtmlLabelLine[] {
+  const rawLines = html
+    .replace(/<br\s*\/?>/gi, "\u0000")
+    .replace(/<\/(div|p|li)>/gi, "\u0000")
+    .split("\u0000");
+
+  const lines: HtmlLabelLine[] = [];
+  for (const raw of rawLines) {
+    const trimmed = raw.trim();
+    const spanMatch = FULL_LINE_SPAN.exec(trimmed);
+    let bold: boolean | undefined;
+    let italic: boolean | undefined;
+    const content = spanMatch ? (spanMatch[2] ?? "") : trimmed;
+    if (spanMatch) {
+      const spanStyle = spanMatch[1] ?? "";
+      const boldMatch = /font-weight\s*:\s*(normal|bold)/i.exec(spanStyle);
+      if (boldMatch) bold = (boldMatch[1] ?? "").toLowerCase() === "bold";
+      const italicMatch = /font-style\s*:\s*(normal|italic)/i.exec(spanStyle);
+      if (italicMatch) italic = (italicMatch[1] ?? "").toLowerCase() === "italic";
+    }
+
+    const text = decodeHtmlEntities(content.replace(/<[^>]+>/g, "")).trim();
+    if (text === "" && rawLines.length > 1) continue;
+    lines.push({ text, bold, italic });
+  }
+  return lines.length > 0 ? lines : [{ text: "" }];
 }
 
 /**
@@ -411,6 +603,7 @@ function renderPage(
       y: parentOffset.y + numAttr(geo, "y"),
       w: numAttr(geo, "width"),
       h: numAttr(geo, "height"),
+      shape: perimeterShapeOf(parseStyle(cell.getAttribute("style") ?? "")),
     });
   }
 
@@ -444,7 +637,7 @@ function renderPage(
     }
     const cx = geo.x + geo.w / 2;
     const cy = geo.y + geo.h / 2;
-    return clipToRect(cx, cy, otherX, otherY, geo.w, geo.h);
+    return clipToShape(geo.shape, cx, cy, otherX, otherY, geo.x, geo.y, geo.w, geo.h);
   }
 
   /**
@@ -578,6 +771,7 @@ function renderPage(
       y: py + dy - h / 2,
       w,
       h,
+      shape: "rect",
     });
   }
 
@@ -705,9 +899,38 @@ function renderPage(
     );
   };
   // Containers draw before their children so nested nodes render on top.
-  const sortedVertices = [...vertices].sort(
-    (a, b) => Number(!isContainer(a)) - Number(!isContainer(b)),
-  );
+  // `isContainer` alone only separates containers from non-containers; it
+  // does NOT account for multi-level nesting depth. With 3+ levels (e.g.
+  // an inner swimlane nested inside an outer one, both containers), a
+  // stable sort on that boolean alone preserves the *original* relative
+  // document order between same-bucket cells - if the inner container
+  // happened to be declared before the outer one, it would still be
+  // painted before its own ancestor and get overwritten by it (issue
+  // #35 regression test: multi-level nested swimlanes with children out
+  // of document order). Sort primarily by ancestor depth (shallower
+  // first) so every cell paints after all of its ancestors regardless of
+  // document order, then fall back to the existing container-first
+  // tiebreak for same-depth siblings.
+  const depthCache = new Map<string, number>();
+  function depthOf(cellId: string, seen = new Set<string>()): number {
+    const cached = depthCache.get(cellId);
+    if (cached !== undefined) return cached;
+    const cell = cellById.get(cellId);
+    const parentId = cell?.getAttribute("parent");
+    if (!cell || !parentId || seen.has(cellId)) {
+      depthCache.set(cellId, 0);
+      return 0;
+    }
+    seen.add(cellId);
+    const depth = 1 + depthOf(parentId, seen);
+    depthCache.set(cellId, depth);
+    return depth;
+  }
+  const sortedVertices = [...vertices].sort((a, b) => {
+    const depthDiff = depthOf(a.getAttribute("id") ?? "") - depthOf(b.getAttribute("id") ?? "");
+    if (depthDiff !== 0) return depthDiff;
+    return Number(!isContainer(a)) - Number(!isContainer(b));
+  });
 
   const nodeSvg: string[] = [];
   for (const cell of sortedVertices) {
@@ -727,7 +950,21 @@ function renderPage(
     const fontColor = style.properties.fontColor ?? "#000000";
     const strokeWidth = Number.parseFloat(style.properties.strokeWidth ?? "1");
     const arc = Number.parseFloat(style.properties.arcSize ?? "0");
-    const rx = Number.isNaN(arc) ? 0 : arc <= 100 ? (arc * Math.min(w, h)) / 100 : arc;
+    const flatRx = Number.isNaN(arc) ? 0 : arc <= 100 ? (arc * Math.min(w, h)) / 100 : arc;
+    // mxSwimlane computes its corner arc as a function of the title bar
+    // height (`startSize`), not as a flat percentage of the box like a
+    // plain rounded rect - see mxgraph's mxSwimlane.getSwimlaneArcSize()
+    // (issue #39). Only applies when the cell is a swimlane/container AND
+    // has `rounded=1`; a swimlane without `rounded=1` keeps square corners.
+    const rx =
+      isContainer(cell) && style.properties.rounded === "1"
+        ? Math.min(
+            Math.min(w, h) / 2,
+            Number.parseFloat(style.properties.startSize ?? "40") *
+              (Number.parseFloat(style.properties.arcSize ?? "15") / 100) *
+              3,
+          )
+        : flatRx;
     const shape = style.properties.shape ?? "";
     const isEllipse = shape === "ellipse" || style.tokens.includes("ellipse");
     const isRhombus = shape === "rhombus" || style.tokens.includes("rhombus");
@@ -744,7 +981,6 @@ function renderPage(
         style.properties.strokeColor === "none");
     const label = cell.getAttribute("value") ?? "";
     const isHtmlLabel = style.properties.html === "1";
-    const plainLabel = isHtmlLabel ? htmlLabelToPlainText(label) : label;
     const fontFamily = `${style.properties.fontFamily ?? ""}, ${FONT_FALLBACK_STACK}`.replace(
       /^,\s*/,
       "",
@@ -805,12 +1041,7 @@ function renderPage(
         glow === "filter" ? `<g filter="url(#softGlow)">${ellipse}</g>${ellipse}` : ellipse,
       );
     } else if (isRhombus) {
-      const points: Array<[number, number]> = [
-        [x + w / 2, y],
-        [x + w, y + h / 2],
-        [x + w / 2, y + h],
-        [x, y + h / 2],
-      ];
+      const points = rhombusPoints(x, y, w, h);
       const rhombus =
         `<polygon points="${polygonPoints(points)}" fill="${fillRef}" fill-opacity="${fillOpacity}" ` +
         `stroke="${stroke}" stroke-width="${strokeWidth}" stroke-opacity="${strokeOpacity}"${dashArray}/>`;
@@ -823,15 +1054,7 @@ function renderPage(
     } else if (isHexagon) {
       // Matches real draw.io's default hexagon inset (~25% of width for
       // the slanted side cuts).
-      const inset = w * 0.25;
-      const points: Array<[number, number]> = [
-        [x + inset, y],
-        [x + w - inset, y],
-        [x + w, y + h / 2],
-        [x + w - inset, y + h],
-        [x + inset, y + h],
-        [x, y + h / 2],
-      ];
+      const points = hexagonPoints(x, y, w, h);
       const hexagon =
         `<polygon points="${polygonPoints(points)}" fill="${fillRef}" fill-opacity="${fillOpacity}" ` +
         `stroke="${stroke}" stroke-width="${strokeWidth}" stroke-opacity="${strokeOpacity}"${dashArray}/>`;
@@ -847,8 +1070,33 @@ function renderPage(
     }
 
     const wrap = style.properties.whiteSpace === "wrap";
-    const lines = wrap ? wrapLabel(plainLabel, w, fontSize) : plainLabel.split("\n");
-    lines.forEach((line, i) => {
+    interface RenderLine {
+      text: string;
+      fontAttrs: string;
+    }
+    const buildFontAttrs = (bold: boolean, italic: boolean): string =>
+      (bold ? ' font-weight="bold"' : "") +
+      (italic ? ' font-style="italic"' : "") +
+      (isUnderline ? ' text-decoration="underline"' : "");
+    let lines: RenderLine[];
+    if (isHtmlLabel) {
+      // Each HTML line may carry its own bold/italic override from a
+      // full-line-wrapping `<span style="...">` (issue #38); re-wrap each
+      // source line independently (rather than the whole flattened label
+      // at once) so that override still applies to any width-driven
+      // re-wrap of that line.
+      lines = parseHtmlLabelLines(label).flatMap((htmlLine) => {
+        const bold = htmlLine.bold ?? isBold;
+        const italic = htmlLine.italic ?? isItalic;
+        const fontAttrs = buildFontAttrs(bold, italic);
+        const wrapped = wrap ? wrapLabel(htmlLine.text, w, fontSize, bold) : [htmlLine.text];
+        return wrapped.map((text) => ({ text, fontAttrs }));
+      });
+    } else {
+      const wrapped = wrap ? wrapLabel(label, w, fontSize, isBold) : label.split("\n");
+      lines = wrapped.map((text) => ({ text, fontAttrs }));
+    }
+    lines.forEach(({ text: line, fontAttrs: lineFontAttrs }, i) => {
       if (rotatedLabel) {
         // Rotate about the label's own anchor point so it reads
         // bottom-to-top along the left edge, matching draw.io's
@@ -861,7 +1109,7 @@ function renderPage(
         const py = y + h / 2;
         cellSvg.push(
           `<text x="${px.toFixed(1)}" y="${py.toFixed(1)}" text-anchor="middle" ` +
-            `font-family="${fontFamily}" font-size="${fontSize}" fill="${fontColor}"${fontAttrs} ` +
+            `font-family="${fontFamily}" font-size="${fontSize}" fill="${fontColor}"${lineFontAttrs} ` +
             `transform="rotate(-90 ${px.toFixed(1)} ${py.toFixed(1)})">${escapeXml(line)}</text>`,
         );
         return;
@@ -879,7 +1127,7 @@ function renderPage(
 
       cellSvg.push(
         `<text x="${textX}" y="${textY + i * 14}" text-anchor="${textAnchor}" ` +
-          `font-family="${fontFamily}" font-size="${fontSize}" fill="${fontColor}"${fontAttrs}>${escapeXml(line)}</text>`,
+          `font-family="${fontFamily}" font-size="${fontSize}" fill="${fontColor}"${lineFontAttrs}>${escapeXml(line)}</text>`,
       );
     });
 

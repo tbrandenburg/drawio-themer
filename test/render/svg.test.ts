@@ -93,6 +93,73 @@ describe("renderDrawioToSvg", () => {
     expect(svg.indexOf("#fafafa")).toBeLessThan(svg.indexOf("#00ff00"));
   });
 
+  it("paints multi-level nested swimlanes before their children even when both containers are declared out of document order (issue #35 regression check for the #27 paint-order sort)", () => {
+    const xml = drawio(
+      '<mxCell id="0"/><mxCell id="1" parent="0"/>' +
+        // Document order deliberately: innermost child first, then the
+        // inner lane, then the outer lane - the opposite of paint order.
+        '<mxCell id="grandchild" value="Leaf" style="fillColor=#0000ff;" vertex="1" parent="inner">' +
+        '<mxGeometry x="5" y="5" width="10" height="10" as="geometry"/></mxCell>' +
+        '<mxCell id="inner" value="Inner" style="swimlane;fillColor=#00ff00;" vertex="1" parent="outer">' +
+        '<mxGeometry x="10" y="10" width="150" height="150" as="geometry"/></mxCell>' +
+        '<mxCell id="outer" value="Outer" style="swimlane;fillColor=#fafafa;" vertex="1" parent="1">' +
+        '<mxGeometry x="0" y="0" width="200" height="200" as="geometry"/></mxCell>',
+    );
+
+    const svg = renderDrawioToSvg(xml);
+
+    expect(svg).toContain(">Leaf<");
+    // Paint order must be outer -> inner -> grandchild regardless of the
+    // reversed document order above, so each nested layer renders on top
+    // of its ancestor instead of being overwritten by it.
+    const outerIdx = svg.indexOf("#fafafa");
+    const innerIdx = svg.indexOf("#00ff00");
+    const leafIdx = svg.indexOf("#0000ff");
+    expect(outerIdx).toBeLessThan(innerIdx);
+    expect(innerIdx).toBeLessThan(leafIdx);
+    // The grandchild's absolute position must also account for both
+    // ancestors' offsets (outer x=0 + inner x=10 + leaf's own x=5 = 15).
+    expect(svg).toContain('x="15"');
+  });
+
+  it("computes a swimlane container's corner arc from startSize using mxSwimlane's formula (issue #39)", () => {
+    const xml = drawio(
+      '<mxCell id="0"/><mxCell id="1" parent="0"/>' +
+        '<mxCell id="lane" value="Lane" style="swimlane;rounded=1;startSize=40;arcSize=15;" ' +
+        'vertex="1" parent="1"><mxGeometry x="0" y="0" width="200" height="100" as="geometry"/></mxCell>',
+    );
+
+    const svg = renderDrawioToSvg(xml);
+
+    // startSize(40) * (arcSize/100=0.15) * 3 = 18, well under min(w,h)/2=50.
+    expect(svg).toContain('rx="18"');
+  });
+
+  it("keeps the flat arc%*min(w,h) formula for a rounded=1 rect that is not a container/swimlane (issue #39)", () => {
+    const xml = drawio(
+      '<mxCell id="0"/><mxCell id="1" parent="0"/>' +
+        '<mxCell id="n1" value="Box" style="rounded=1;arcSize=15;" ' +
+        'vertex="1" parent="1"><mxGeometry x="0" y="0" width="200" height="100" as="geometry"/></mxCell>',
+    );
+
+    const svg = renderDrawioToSvg(xml);
+
+    // Flat formula: arc(15) * min(w,h)=100 / 100 = 15.
+    expect(svg).toContain('rx="15"');
+  });
+
+  it("keeps square corners for a swimlane container without rounded=1 (issue #39)", () => {
+    const xml = drawio(
+      '<mxCell id="0"/><mxCell id="1" parent="0"/>' +
+        '<mxCell id="lane" value="Lane" style="swimlane;startSize=40;" ' +
+        'vertex="1" parent="1"><mxGeometry x="0" y="0" width="200" height="100" as="geometry"/></mxCell>',
+    );
+
+    const svg = renderDrawioToSvg(xml);
+
+    expect(svg).toContain('rx="0"');
+  });
+
   it("appends the font fallback stack to whatever fontFamily the theme sets", () => {
     const xml = drawio(
       '<mxCell id="0"/><mxCell id="1" parent="0"/>' +
@@ -333,6 +400,89 @@ describe("renderDrawioToSvg", () => {
     expect(svg).not.toMatch(/<line x1=/);
   });
 
+  it("clips an edge endpoint to the target ellipse's real perimeter, not its bbox corner (issue #35)", () => {
+    const xml = drawio(
+      '<mxCell id="0"/><mxCell id="1" parent="0"/>' +
+        // Source directly above-and-left of the target so a naive
+        // rectangular clip would land on the ellipse's bbox corner
+        // (200,200) instead of a point on the actual ellipse boundary.
+        '<mxCell id="n1" style="" vertex="1" parent="1"><mxGeometry x="0" y="0" width="100" height="100" as="geometry"/></mxCell>' +
+        '<mxCell id="n2" style="shape=ellipse;" vertex="1" parent="1"><mxGeometry x="200" y="200" width="100" height="100" as="geometry"/></mxCell>' +
+        '<mxCell id="e1" style="" edge="1" parent="1" source="n1" target="n2">' +
+        '<mxGeometry relative="1" as="geometry"/></mxCell>',
+    );
+
+    const svg = renderDrawioToSvg(xml);
+
+    const match = svg.match(/<line x1="([\d.]+)" y1="([\d.]+)" x2="([\d.]+)" y2="([\d.]+)"/);
+    expect(match).not.toBeNull();
+    const x2 = Number(match?.[3]);
+    const y2 = Number(match?.[4]);
+    // The ellipse is centered at (250,250) with rx=ry=50. Along the
+    // diagonal ray from n1's center (50,50) toward n2's center
+    // (250,250), the true ellipse-boundary intersection is at
+    // 250 - 50/sqrt(2) ≈ 214.6 for both x and y - well short of the
+    // bbox corner (200,200) a rectangular clip would produce.
+    const expected = 250 - 50 / Math.sqrt(2);
+    expect(x2).toBeCloseTo(expected, 1);
+    expect(y2).toBeCloseTo(expected, 1);
+    expect(x2).not.toBe(200);
+    expect(y2).not.toBe(200);
+  });
+
+  it("clips an edge endpoint to the target rhombus's real diamond perimeter, not its bbox corner (issue #35)", () => {
+    const xml = drawio(
+      '<mxCell id="0"/><mxCell id="1" parent="0"/>' +
+        '<mxCell id="n1" style="" vertex="1" parent="1"><mxGeometry x="0" y="0" width="100" height="100" as="geometry"/></mxCell>' +
+        '<mxCell id="n2" style="rhombus;" vertex="1" parent="1"><mxGeometry x="200" y="0" width="100" height="100" as="geometry"/></mxCell>' +
+        '<mxCell id="e1" style="" edge="1" parent="1" source="n1" target="n2">' +
+        '<mxGeometry relative="1" as="geometry"/></mxCell>',
+    );
+
+    const svg = renderDrawioToSvg(xml);
+
+    const match = svg.match(/<line x1="([\d.]+)" y1="([\d.]+)" x2="([\d.]+)" y2="([\d.]+)"/);
+    expect(match).not.toBeNull();
+    const x2 = Number(match?.[3]);
+    const y2 = Number(match?.[4]);
+    // n1 and n2 centers are both at y=50, so the ray is purely
+    // horizontal, hitting the rhombus's left vertex (x, y+h/2) = (200,50)
+    // - the diamond's own leftmost point, distinct from a rectangular
+    // bbox clip only insofar as it confirms the polygon-vertex math is
+    // wired up correctly for this exact shape/geometry.
+    expect(x2).toBeCloseTo(200, 1);
+    expect(y2).toBeCloseTo(50, 1);
+  });
+
+  it("clips an edge endpoint to the target hexagon's real perimeter, not its bbox corner (issue #35)", () => {
+    const xml = drawio(
+      '<mxCell id="0"/><mxCell id="1" parent="0"/>' +
+        // n1's center is (80,50); n2 is a hexagon (x=100,y=100,w=100,
+        // h=100, inset=25) centered at (150,150). The ray between them
+        // crosses the hexagon's slanted top-left edge (from (100,150) to
+        // (125,100)) at a point a naive bbox clip would not reach.
+        '<mxCell id="n1" style="" vertex="1" parent="1"><mxGeometry x="30" y="0" width="100" height="100" as="geometry"/></mxCell>' +
+        '<mxCell id="n2" style="shape=hexagon;" vertex="1" parent="1"><mxGeometry x="100" y="100" width="100" height="100" as="geometry"/></mxCell>' +
+        '<mxCell id="e1" style="" edge="1" parent="1" source="n1" target="n2">' +
+        '<mxGeometry relative="1" as="geometry"/></mxCell>',
+    );
+
+    const svg = renderDrawioToSvg(xml);
+
+    const match = svg.match(/<line x1="([\d.]+)" y1="([\d.]+)" x2="([\d.]+)" y2="([\d.]+)"/);
+    expect(match).not.toBeNull();
+    const x2 = Number(match?.[3]);
+    const y2 = Number(match?.[4]);
+    // Analytic ray-vs-slanted-edge intersection (same relative geometry
+    // as the doc comment above, shifted +100 in y): ~(120.83, 108.33). A
+    // rectangular bbox clip on the same ray would instead stop at
+    // (115, 100) - clearly different from the hexagon's real perimeter
+    // point.
+    expect(x2).toBeCloseTo(120.83, 1);
+    expect(y2).toBeCloseTo(108.33, 1);
+    expect([x2, y2]).not.toEqual([115, 100]);
+  });
+
   it("connects an edge with exitX/exitY/entryX/entryY at the specified fractional border point", () => {
     const xml = drawio(
       '<mxCell id="0"/><mxCell id="1" parent="0"/>' +
@@ -412,6 +562,22 @@ describe("renderDrawioToSvg", () => {
 
     const textCount = (svg.match(/<text /g) ?? []).length;
     expect(textCount).toBe(2);
+  });
+
+  it("wraps a bold label whose regular-weight-estimated width sits just under the wrap threshold (issue #37)", () => {
+    const xml = drawio(
+      '<mxCell id="0"/><mxCell id="1" parent="0"/>' +
+        '<mxCell id="n1" value="Domains &amp;amp; Edge" ' +
+        'style="rounded=1;whiteSpace=wrap;html=1;fillColor=#ffffff;strokeColor=#e4e4e7;' +
+        "fontStyle=1;fontFamily=Helvetica;fontSize=14;strokeWidth=1;fontColor=#18181b;" +
+        'arcSize=12;shadow=0;" vertex="1" parent="1">' +
+        '<mxGeometry x="0" y="0" width="100" height="70" as="geometry"/></mxCell>',
+    );
+
+    const svg = renderDrawioToSvg(xml);
+
+    const textCount = (svg.match(/<text /g) ?? []).length;
+    expect(textCount).toBeGreaterThan(1);
   });
 
   it("does not wrap a label when whiteSpace=wrap is absent, even if it overflows", () => {
@@ -636,6 +802,24 @@ describe("renderDrawioToSvg", () => {
 
     expect(svg).toContain(">Bold &amp; safe<");
     expect(svg).not.toContain("&lt;b&gt;");
+  });
+
+  it('honors a line-level <span style="font-weight: normal"> override within a bold-fontStyle html=1 label (issue #38)', () => {
+    const xml = drawio(
+      '<mxCell id="0"/><mxCell id="1" parent="0"/>' +
+        '<mxCell id="n1" value="1 Experience Layer&lt;br&gt;&lt;span style=&quot;font-weight: normal;&quot;&gt;' +
+        'Natural and flexible ways to work&lt;/span&gt;" style="html=1;fontStyle=1;" vertex="1" parent="1">' +
+        '<mxGeometry x="0" y="0" width="200" height="60" as="geometry"/></mxCell>',
+    );
+
+    const svg = renderDrawioToSvg(xml);
+    const textElements = [...svg.matchAll(/<text[^>]*>([^<]*)<\/text>/g)];
+
+    expect(textElements).toHaveLength(2);
+    expect(textElements[0]?.[0]).toContain('font-weight="bold"');
+    expect(textElements[0]?.[1]).toBe("1 Experience Layer");
+    expect(textElements[1]?.[0]).not.toContain('font-weight="bold"');
+    expect(textElements[1]?.[1]).toBe("Natural and flexible ways to work");
   });
 
   it("positions an edge-label child cell along the edge's real path instead of at (0,0) (issue #14)", () => {
