@@ -135,6 +135,22 @@ describe("renderDrawioToSvg", () => {
     expect(svg).toContain('width="1600" height="900" viewBox="0 0 1600 900"');
   });
 
+  it("grows the canvas past a declared pageWidth/pageHeight when content overflows it", () => {
+    const xml =
+      '<mxfile host="test"><diagram id="p1" name="Page-1">' +
+      '<mxGraphModel pageWidth="200" pageHeight="200"><root>' +
+      '<mxCell id="0"/><mxCell id="1" parent="0"/>' +
+      '<mxCell id="n1" style="" vertex="1" parent="1">' +
+      '<mxGeometry x="0" y="0" width="400" height="400" as="geometry"/></mxCell>' +
+      "</root></mxGraphModel></diagram></mxfile>";
+
+    const svg = renderDrawioToSvg(xml);
+
+    // bbox right/bottom = (400, 400) + 20px margin = (420, 420), which
+    // exceeds the declared 200x200 page, so the canvas must grow to fit it.
+    expect(svg).toContain('width="420" height="420" viewBox="0 0 420 420"');
+  });
+
   it("falls back to the content bounding box when pageWidth/pageHeight are absent", () => {
     const xml = drawio(
       '<mxCell id="0"/><mxCell id="1" parent="0"/>' +
