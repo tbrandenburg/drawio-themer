@@ -2158,13 +2158,31 @@ function renderPage(
     });
 
     const rotation = Number.parseFloat(style.properties.rotation ?? "0");
+    const flipH = style.properties.flipH === "1";
+    const flipV = style.properties.flipV === "1";
+    const transforms: string[] = [];
+    if (flipH || flipV) {
+      const cx = x + w / 2;
+      const cy = y + h / 2;
+      const sx = flipH ? -1 : 1;
+      const sy = flipV ? -1 : 1;
+      // mxgraph applies flip in the shape's own local coordinate space
+      // before rotation, so this transform is prepended (i.e. applied
+      // first, since SVG transforms compose left-to-right as outer-to-inner)
+      // ahead of the rotate() below (issue #57, sub-item 6a).
+      transforms.push(`translate(${cx} ${cy}) scale(${sx} ${sy}) translate(${-cx} ${-cy})`);
+    }
     if (!Number.isNaN(rotation) && rotation !== 0) {
       const cx = x + w / 2;
       const cy = y + h / 2;
-      svgById.set(id, `<g transform="rotate(${rotation} ${cx} ${cy})">${cellSvg.join("")}</g>`);
-    } else {
-      svgById.set(id, cellSvg.join(""));
+      transforms.push(`rotate(${rotation} ${cx} ${cy})`);
     }
+    svgById.set(
+      id,
+      transforms.length > 0
+        ? `<g transform="${transforms.join(" ")}">${cellSvg.join("")}</g>`
+        : cellSvg.join(""),
+    );
   }
 
   // Real draw.io paints cells in document/z-order (later-declared cells on
