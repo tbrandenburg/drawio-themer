@@ -1235,10 +1235,9 @@ function renderPage(
       // explicitly sets `swimlaneFillColor` (issue #42, mxSwimlane.js
       // `apply()`/`paintRoundedSwimlane()`). Only the outer corners of each
       // region are rounded in real draw.io - the seam between title and
-      // body is a straight internal edge - but this offline renderer
-      // reuses the single `rx` computed above on both rects for
-      // simplicity, matching this project's documented "approximate, not
-      // pixel-perfect" rendering tradeoffs.
+      // body is a straight internal edge, so when rounded (rx > 0) each
+      // region is drawn as a path that rounds only its 2 outer corners,
+      // matching mxSwimlane.paintRoundedSwimlane() (issue #50).
       const startSize = Math.max(0, Number.parseFloat(style.properties.startSize ?? "0") || 0);
       const rotatedTitle = style.properties.horizontal === "0";
       const titleW = rotatedTitle ? Math.min(startSize, w) : w;
@@ -1252,17 +1251,54 @@ function renderPage(
             : glow === "filter"
               ? `url(#${gradientFor(bodyFill)})`
               : bodyFill;
-      const titleRect =
-        `<rect x="${x}" y="${y}" width="${titleW}" height="${titleH}" rx="${rx}" ` +
+      const titleAttrs =
         `fill="${fillRef}" fill-opacity="${fillOpacity}" stroke="${stroke}" ` +
         `stroke-width="${strokeWidth}" stroke-opacity="${strokeOpacity}"${dashArray}/>`;
-      const bodyRect = rotatedTitle
-        ? `<rect x="${x + titleW}" y="${y}" width="${w - titleW}" height="${h}" rx="${rx}" ` +
-          `fill="${bodyFillRef}" fill-opacity="${fillOpacity}" stroke="${stroke}" ` +
-          `stroke-width="${strokeWidth}" stroke-opacity="${strokeOpacity}"${dashArray}/>`
-        : `<rect x="${x}" y="${y + titleH}" width="${w}" height="${h - titleH}" rx="${rx}" ` +
-          `fill="${bodyFillRef}" fill-opacity="${fillOpacity}" stroke="${stroke}" ` +
-          `stroke-width="${strokeWidth}" stroke-opacity="${strokeOpacity}"${dashArray}/>`;
+      const bodyAttrs =
+        `fill="${bodyFillRef}" fill-opacity="${fillOpacity}" stroke="${stroke}" ` +
+        `stroke-width="${strokeWidth}" stroke-opacity="${strokeOpacity}"${dashArray}/>`;
+      let titleRect: string;
+      let bodyRect: string;
+      if (rx > 0 && rotatedTitle) {
+        // horizontal=0: title is a vertical column on the left, seam is
+        // vertical at x+titleW. Title rounds its left corners; body rounds
+        // its right corners.
+        const vArc = Math.min(h / 2, rx);
+        titleRect =
+          `<path d="M ${x + titleW},${y} L ${x + rx},${y} ` +
+          `Q ${x},${y} ${x},${y + vArc} ` +
+          `L ${x},${y + h - vArc} ` +
+          `Q ${x},${y + h} ${x + rx},${y + h} ` +
+          `L ${x + titleW},${y + h} Z" ${titleAttrs}`;
+        bodyRect =
+          `<path d="M ${x + titleW},${y + h} L ${x + w - rx},${y + h} ` +
+          `Q ${x + w},${y + h} ${x + w},${y + h - vArc} ` +
+          `L ${x + w},${y + vArc} ` +
+          `Q ${x + w},${y} ${x + w - rx},${y} ` +
+          `L ${x + titleW},${y} Z" ${bodyAttrs}`;
+      } else if (rx > 0) {
+        // horizontal=1: title is a horizontal row on top, seam is
+        // horizontal at y+titleH. Title rounds its top corners; body
+        // rounds its bottom corners.
+        const hArc = Math.min(w / 2, rx);
+        titleRect =
+          `<path d="M ${x},${y + titleH} L ${x},${y + rx} ` +
+          `Q ${x},${y} ${x + hArc},${y} ` +
+          `L ${x + w - hArc},${y} ` +
+          `Q ${x + w},${y} ${x + w},${y + rx} ` +
+          `L ${x + w},${y + titleH} Z" ${titleAttrs}`;
+        bodyRect =
+          `<path d="M ${x},${y + titleH} L ${x},${y + h - rx} ` +
+          `Q ${x},${y + h} ${x + rx},${y + h} ` +
+          `L ${x + w - rx},${y + h} ` +
+          `Q ${x + w},${y + h} ${x + w},${y + h - rx} ` +
+          `L ${x + w},${y + titleH} Z" ${bodyAttrs}`;
+      } else {
+        titleRect = `<rect x="${x}" y="${y}" width="${titleW}" height="${titleH}" rx="${rx}" ${titleAttrs}`;
+        bodyRect = rotatedTitle
+          ? `<rect x="${x + titleW}" y="${y}" width="${w - titleW}" height="${h}" rx="${rx}" ${bodyAttrs}`
+          : `<rect x="${x}" y="${y + titleH}" width="${w}" height="${h - titleH}" rx="${rx}" ${bodyAttrs}`;
+      }
       cellSvg.push(
         withShadow(
           glow === "filter" ? `<g filter="url(#softGlow)">${titleRect}</g>${titleRect}` : titleRect,
