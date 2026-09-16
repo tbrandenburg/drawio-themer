@@ -137,6 +137,19 @@ function lighten(hexColor: string, amount = 14): string {
     .join("")}`;
 }
 
+function darken(hexColor: string, amount = 14): string {
+  const h = hexColor.replace(/^#/, "");
+  if (h.length !== 6) return hexColor;
+  const r = Number.parseInt(h.slice(0, 2), 16);
+  const g = Number.parseInt(h.slice(2, 4), 16);
+  const b = Number.parseInt(h.slice(4, 6), 16);
+  const clamp = (c: number) => Math.max(0, c - amount);
+  return `#${[r, g, b]
+    .map(clamp)
+    .map((c) => c.toString(16).padStart(2, "0"))
+    .join("")}`;
+}
+
 /**
  * Clips the point at the rect's edge along the line from (cx,cy) [this
  * rect's center] toward (ox,oy) [the other endpoint], so edges terminate
@@ -254,6 +267,123 @@ function hexagonPoints(x: number, y: number, w: number, h: number): Array<[numbe
     [x + inset, y + h],
     [x, y + h / 2],
   ];
+}
+
+/**
+ * The triangle outline for `shape=triangle` cells (issue #52, 1b), matching
+ * mxTriangle.js's default `direction=east`: apex on the right edge,
+ * vertical base on the left.
+ */
+function trianglePoints(x: number, y: number, w: number, h: number): Array<[number, number]> {
+  return [
+    [x, y],
+    [x + w, y + h / 2],
+    [x, y + h],
+  ];
+}
+
+/**
+ * The parallelogram outline for `shape=parallelogram` cells (issue #52,
+ * 1b), matching mxParallelogram.js's default ~20%-of-width skew on the
+ * top/bottom edges.
+ */
+function parallelogramPoints(x: number, y: number, w: number, h: number): Array<[number, number]> {
+  const skew = Math.min(w * 0.2, w / 2);
+  return [
+    [x + skew, y],
+    [x + w, y],
+    [x + w - skew, y + h],
+    [x, y + h],
+  ];
+}
+
+/**
+ * The trapezoid outline for `shape=trapezoid` cells (issue #52, 1b),
+ * matching mxTrapezoid.js's default ~20%-of-width inset on the top edge
+ * (slanted left/right sides, flat top and bottom).
+ */
+function trapezoidPoints(x: number, y: number, w: number, h: number): Array<[number, number]> {
+  const inset = Math.min(w * 0.2, w / 2);
+  return [
+    [x + inset, y],
+    [x + w - inset, y],
+    [x + w, y + h],
+    [x, y + h],
+  ];
+}
+
+/**
+ * The step (chevron arrow) outline for `shape=step` cells (issue #52,
+ * 1b), matching mxStep.js's default ~20%-of-width notch on the left edge
+ * and point on the right edge.
+ */
+function stepPoints(x: number, y: number, w: number, h: number): Array<[number, number]> {
+  const inset = Math.min(w * 0.2, w / 2);
+  return [
+    [x, y],
+    [x + w - inset, y],
+    [x + w, y + h / 2],
+    [x + w - inset, y + h],
+    [x, y + h],
+    [x + inset, y + h / 2],
+  ];
+}
+
+/**
+ * The three beveled faces (front/top/side) mxgraph draws for `shape=cube`
+ * cells (issue #52, 1b), matching mxCube.js's fixed-ish bevel `size`
+ * (here capped like the cylinder cap so it doesn't grow unbounded on
+ * large boxes).
+ */
+function cubeFaces(
+  x: number,
+  y: number,
+  w: number,
+  h: number,
+): {
+  front: Array<[number, number]>;
+  top: Array<[number, number]>;
+  side: Array<[number, number]>;
+} {
+  const size = Math.min(20, w * 0.3, h * 0.3);
+  return {
+    front: [
+      [x, y + size],
+      [x + w - size, y + size],
+      [x + w - size, y + h],
+      [x, y + h],
+    ],
+    top: [
+      [x, y + size],
+      [x + size, y],
+      [x + w, y],
+      [x + w - size, y + size],
+    ],
+    side: [
+      [x + w - size, y + size],
+      [x + w, y],
+      [x + w, y + h - size],
+      [x + w - size, y + h],
+    ],
+  };
+}
+
+/**
+ * The stick-figure silhouette path mxgraph draws for `shape=actor` cells
+ * (issue #52, 1b), approximating mxActor.js's rounded-shoulder cubic-
+ * bezier outline (head/shoulders arc into a tapered body, no separate
+ * head circle - matches the real shape's single continuous path).
+ */
+function actorPath(x: number, y: number, w: number, h: number): string {
+  const pw = w / 3;
+  const ph = h / 3;
+  return (
+    `M ${x},${y + h} ` +
+    `C ${x},${y + h - ph * 1.7} ${x},${y + ph * 1.7} ${x + pw},${y + ph * 1.7} ` +
+    `C ${x + pw},${y + ph * 0.8} ${x + pw * 1.5},${y} ${x + w / 2},${y} ` +
+    `C ${x + w - pw * 1.5},${y} ${x + w - pw},${y + ph * 0.8} ${x + w - pw},${y + ph * 1.7} ` +
+    `C ${x + w},${y + ph * 1.7} ${x + w},${y + h - ph * 1.7} ${x + w},${y + h} Z`
+  );
 }
 
 /**
@@ -1141,6 +1271,16 @@ function renderPage(
     const isEllipse = shape === "ellipse" || style.tokens.includes("ellipse");
     const isRhombus = shape === "rhombus" || style.tokens.includes("rhombus");
     const isHexagon = shape === "hexagon";
+    // Core basic shapes (issue #52, 1b) - each a distinct mxgraph shape
+    // class (mxTriangle.js/mxParallelogram.js/mxTrapezoid.js/mxStep.js/
+    // mxCube.js/mxActor.js), not just a rect variant. Deliberately NOT
+    // resolving `shape=mxgraph.*` stencil paths here (issue #52, 1a).
+    const isTriangle = shape === "triangle";
+    const isParallelogram = shape === "parallelogram";
+    const isTrapezoid = shape === "trapezoid";
+    const isStep = shape === "step";
+    const isCube = shape === "cube";
+    const isActor = shape === "actor";
     // Matches `isText` in ../drawio/classifier.ts: a `text;`-styled cell
     // (draw.io's "Text" shape) always renders borderless/fill-less in real
     // draw.io, regardless of any strokeColor/fillColor left in its style
@@ -1274,6 +1414,64 @@ function renderPage(
         withShadow(
           glow === "filter" ? `<g filter="url(#softGlow)">${hexagon}</g>${hexagon}` : hexagon,
         ),
+      );
+    } else if (isTriangle) {
+      const points = trianglePoints(x, y, w, h);
+      const triangle =
+        `<polygon points="${polygonPoints(points)}" fill="${fillRef}" fill-opacity="${fillOpacity}" ` +
+        `stroke="${stroke}" stroke-width="${strokeWidth}" stroke-opacity="${strokeOpacity}"${dashArray}/>`;
+      cellSvg.push(
+        withShadow(
+          glow === "filter" ? `<g filter="url(#softGlow)">${triangle}</g>${triangle}` : triangle,
+        ),
+      );
+    } else if (isParallelogram) {
+      const points = parallelogramPoints(x, y, w, h);
+      const parallelogram =
+        `<polygon points="${polygonPoints(points)}" fill="${fillRef}" fill-opacity="${fillOpacity}" ` +
+        `stroke="${stroke}" stroke-width="${strokeWidth}" stroke-opacity="${strokeOpacity}"${dashArray}/>`;
+      cellSvg.push(
+        withShadow(
+          glow === "filter"
+            ? `<g filter="url(#softGlow)">${parallelogram}</g>${parallelogram}`
+            : parallelogram,
+        ),
+      );
+    } else if (isTrapezoid || isStep) {
+      const points = isStep ? stepPoints(x, y, w, h) : trapezoidPoints(x, y, w, h);
+      const stepShape =
+        `<polygon points="${polygonPoints(points)}" fill="${fillRef}" fill-opacity="${fillOpacity}" ` +
+        `stroke="${stroke}" stroke-width="${strokeWidth}" stroke-opacity="${strokeOpacity}"${dashArray}/>`;
+      cellSvg.push(
+        withShadow(
+          glow === "filter" ? `<g filter="url(#softGlow)">${stepShape}</g>${stepShape}` : stepShape,
+        ),
+      );
+    } else if (isCube) {
+      const { front, top, side } = cubeFaces(x, y, w, h);
+      const isHexColor = /^#[0-9a-fA-F]{6}$/.test(fill);
+      const topFillRef = isHexColor ? lighten(fill, 20) : fillRef;
+      const sideFillRef = isHexColor ? darken(fill, 20) : fillRef;
+      const frontFace =
+        `<polygon points="${polygonPoints(front)}" fill="${fillRef}" fill-opacity="${fillOpacity}" ` +
+        `stroke="${stroke}" stroke-width="${strokeWidth}" stroke-opacity="${strokeOpacity}"${dashArray}/>`;
+      const topFace =
+        `<polygon points="${polygonPoints(top)}" fill="${topFillRef}" fill-opacity="${fillOpacity}" ` +
+        `stroke="${stroke}" stroke-width="${strokeWidth}" stroke-opacity="${strokeOpacity}"${dashArray}/>`;
+      const sideFace =
+        `<polygon points="${polygonPoints(side)}" fill="${sideFillRef}" fill-opacity="${fillOpacity}" ` +
+        `stroke="${stroke}" stroke-width="${strokeWidth}" stroke-opacity="${strokeOpacity}"${dashArray}/>`;
+      const cube = `${frontFace}${topFace}${sideFace}`;
+      cellSvg.push(
+        withShadow(glow === "filter" ? `<g filter="url(#softGlow)">${cube}</g>${cube}` : cube),
+      );
+    } else if (isActor) {
+      const d = actorPath(x, y, w, h);
+      const actor =
+        `<path d="${d}" fill="${fillRef}" fill-opacity="${fillOpacity}" ` +
+        `stroke="${stroke}" stroke-width="${strokeWidth}" stroke-opacity="${strokeOpacity}"${dashArray}/>`;
+      cellSvg.push(
+        withShadow(glow === "filter" ? `<g filter="url(#softGlow)">${actor}</g>${actor}` : actor),
       );
     } else if (
       isContainer(cell) &&

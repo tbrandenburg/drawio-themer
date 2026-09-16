@@ -499,6 +499,87 @@ describe("renderDrawioToSvg", () => {
     expect(svg).not.toMatch(/<rect x="0" y="0"/);
   });
 
+  it("renders shape=triangle as a triangular <polygon>, not a generic rect (issue #52)", () => {
+    const xml = drawio(
+      '<mxCell id="0"/><mxCell id="1" parent="0"/>' +
+        '<mxCell id="n1" value="Cond" style="shape=triangle;fillColor=#dae8fc;strokeColor=#6c8ebf;" ' +
+        'vertex="1" parent="1"><mxGeometry x="0" y="0" width="80" height="40" as="geometry"/></mxCell>',
+    );
+
+    const svg = renderDrawioToSvg(xml);
+
+    expect(svg).toMatch(/<polygon points="0\.0,0\.0 80\.0,20\.0 0\.0,40\.0"/);
+    expect(svg).not.toMatch(/<rect x="0" y="0"/);
+  });
+
+  it("renders shape=parallelogram as a skewed <polygon>, not a generic rect (issue #52)", () => {
+    const xml = drawio(
+      '<mxCell id="0"/><mxCell id="1" parent="0"/>' +
+        '<mxCell id="n1" value="Input" style="shape=parallelogram;fillColor=#d5e8d4;strokeColor=#82b366;" ' +
+        'vertex="1" parent="1"><mxGeometry x="0" y="0" width="80" height="40" as="geometry"/></mxCell>',
+    );
+
+    const svg = renderDrawioToSvg(xml);
+
+    expect(svg).toMatch(/<polygon points="16\.0,0\.0 80\.0,0\.0 64\.0,40\.0 0\.0,40\.0"/);
+    expect(svg).not.toMatch(/<rect x="0" y="0"/);
+  });
+
+  it("renders shape=trapezoid as a trapezoidal <polygon>, not a generic rect (issue #52)", () => {
+    const xml = drawio(
+      '<mxCell id="0"/><mxCell id="1" parent="0"/>' +
+        '<mxCell id="n1" value="Manual" style="shape=trapezoid;fillColor=#ffe6cc;strokeColor=#d79b00;" ' +
+        'vertex="1" parent="1"><mxGeometry x="0" y="0" width="80" height="40" as="geometry"/></mxCell>',
+    );
+
+    const svg = renderDrawioToSvg(xml);
+
+    expect(svg).toMatch(/<polygon points="16\.0,0\.0 64\.0,0\.0 80\.0,40\.0 0\.0,40\.0"/);
+    expect(svg).not.toMatch(/<rect x="0" y="0"/);
+  });
+
+  it("renders shape=step as a chevron/notched <polygon>, not a generic rect (issue #52)", () => {
+    const xml = drawio(
+      '<mxCell id="0"/><mxCell id="1" parent="0"/>' +
+        '<mxCell id="n1" value="Step" style="shape=step;fillColor=#e1d5e7;strokeColor=#9673a6;" ' +
+        'vertex="1" parent="1"><mxGeometry x="0" y="0" width="80" height="40" as="geometry"/></mxCell>',
+    );
+
+    const svg = renderDrawioToSvg(xml);
+
+    expect(svg).toMatch(
+      /<polygon points="0\.0,0\.0 64\.0,0\.0 80\.0,20\.0 64\.0,40\.0 0\.0,40\.0 16\.0,20\.0"/,
+    );
+    expect(svg).not.toMatch(/<rect x="0" y="0"/);
+  });
+
+  it("renders shape=cube as three beveled-face <polygon>s, not a generic rect (issue #52)", () => {
+    const xml = drawio(
+      '<mxCell id="0"/><mxCell id="1" parent="0"/>' +
+        '<mxCell id="n1" value="Storage" style="shape=cube;fillColor=#f5f5f5;strokeColor=#666666;" ' +
+        'vertex="1" parent="1"><mxGeometry x="0" y="0" width="80" height="40" as="geometry"/></mxCell>',
+    );
+
+    const svg = renderDrawioToSvg(xml);
+
+    const polygonCount = (svg.match(/<polygon/g) ?? []).length;
+    expect(polygonCount).toBe(3);
+    expect(svg).not.toMatch(/<rect x="0" y="0"/);
+  });
+
+  it("renders shape=actor as a stick-figure silhouette <path>, not a generic rect (issue #52)", () => {
+    const xml = drawio(
+      '<mxCell id="0"/><mxCell id="1" parent="0"/>' +
+        '<mxCell id="n1" value="User" style="shape=actor;fillColor=#dae8fc;strokeColor=#6c8ebf;" ' +
+        'vertex="1" parent="1"><mxGeometry x="0" y="0" width="30" height="60" as="geometry"/></mxCell>',
+    );
+
+    const svg = renderDrawioToSvg(xml);
+
+    expect(svg).toMatch(/<path d="M 0,60 C /);
+    expect(svg).not.toMatch(/<rect x="0" y="0"/);
+  });
+
   it("routes an edge with explicit mxPoint waypoints as a polyline through those points", () => {
     const xml = drawio(
       '<mxCell id="0"/><mxCell id="1" parent="0"/>' +
