@@ -124,6 +124,38 @@ Notes that still apply:
   overwriting the same name can show a stale image even after the
   underlying file changed.
 
+### Structural fidelity limits vs real draw.io (not just unfixed bugs)
+
+Real draw.io (jgraph/drawio's vendored mxgraph fork) renders labels as
+live HTML inside SVG `<foreignObject>` elements and delegates word-wrap
+to the browser's own CSS reflow (or, in its non-DOM fallback path, to
+`canvas.measureText()` — still a real browser/OS font engine). Its own
+PNG export runs Chromium via Electron and calls `capturePage()` against
+that live rendered DOM. Our offline renderer
+(`src/render/svg.ts` + `src/render/rasterize.ts`) is instead a
+from-scratch, static SVG generator rasterized by `resvg` — a static SVG
+interpreter with no `<foreignObject>`/HTML support, no web-font loading,
+and only partial CSS filter support. Given that architecture, some
+divergence from real draw.io's export is **structural, not just
+currently-unfixed**:
+
+- **Expected to be exactly correct**: geometry (position/size), shape
+  classification (e.g. `shape=cylinder3` stays a cylinder), paint order,
+  and colors/theming applied by the theme compiler. A pixel diff here is
+  a real bug — file it.
+- **Expected to differ, and likely to stay approximate**: fine-grained
+  text layout (`wrapLabel`'s character-width heuristic vs. a real
+  font-metrics/DOM reflow engine), any `<foreignObject>`/HTML-label edge
+  case, and CSS filter effects (shadows, blurs) beyond what `resvg`
+  supports. Before filing a new pixel-diff issue in these categories,
+  check whether it's better explained as an inherent approximation of
+  this architecture than a fixable bug.
+
+Adopting a browser-engine-based rendering backend (see the opt-in
+Chromium rasterization backend proposed in issue #34) would close these
+gaps by construction; short of that, expect them to persist across
+further `wrapLabel`/`svg.ts` fixes.
+
 ### Fallback: standalone scripts / Playwright browser pipeline
 
 `scripts/render-drawio-preview.py` (Python) and `scripts/svg-to-png.mjs`
