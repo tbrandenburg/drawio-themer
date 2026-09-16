@@ -16,6 +16,14 @@ function parseFormat(value: string): OutputFormat {
   return value as OutputFormat;
 }
 
+function parsePngScale(value: string): number {
+  const parsed = Number(value);
+  if (!Number.isFinite(parsed) || parsed <= 0) {
+    throw new Error(`Invalid --png-scale value "${value}". Expected a positive finite number.`);
+  }
+  return parsed;
+}
+
 const program = new Command();
 
 program
@@ -49,6 +57,12 @@ program
     "--svg, --svg-themed <file>",
     "Render the themed output as an approximate SVG render (not a substitute for real draw.io)",
   )
+  .option(
+    "--png-scale <factor>",
+    "Pixel density for PNG renders, relative to the SVG's unit size (matches draw.io's retina export)",
+    parsePngScale,
+    2,
+  )
   .action(async (input: string, options: Record<string, unknown>) => {
     const applyOptions: ApplyOptions = {
       theme: options.theme as string,
@@ -61,6 +75,7 @@ program
       pngThemed: options.pngThemed as string | undefined,
       svgOriginal: options.svgOriginal as string | undefined,
       svgThemed: options.svgThemed as string | undefined,
+      pngScale: options.pngScale as number,
     };
 
     try {

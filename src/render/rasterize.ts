@@ -43,13 +43,28 @@ const BUNDLED_FONT_PATH = join(MODULE_DIR, "assets", "NotoSans-Regular.ttf");
  */
 export { BUNDLED_FONT_PATH };
 
+/** Options for {@link rasterizeSvgToPng}. */
+export interface RasterizeOptions {
+  /**
+   * Output pixel density relative to the SVG's declared unit dimensions.
+   * Defaults to 2, matching real draw.io's own retina-style PNG export
+   * density (issue #23). Pass 1 for a legacy 1:1 render.
+   */
+  scale?: number;
+}
+
 /** Rasterizes an SVG document string to a PNG image buffer. */
-export function rasterizeSvgToPng(svg: string): Buffer {
+export function rasterizeSvgToPng(svg: string, options?: RasterizeOptions): Buffer {
+  const scale = options?.scale ?? 2;
   const resvg = new Resvg(svg, {
     font: {
       fontFiles: [BUNDLED_FONT_PATH],
       loadSystemFonts: true,
       defaultFontFamily: "Noto Sans",
+    },
+    fitTo: {
+      mode: "zoom",
+      value: scale,
     },
   });
   return resvg.render().asPng();

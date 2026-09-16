@@ -25,6 +25,12 @@ export interface ApplyOptions {
   svgOriginal?: string;
   /** Render the *themed* output as an approximate SVG render. */
   svgThemed?: string;
+  /**
+   * Output pixel density for `--png-original`/`--png-themed`, relative to
+   * the SVG's declared unit dimensions. Defaults to 2 (matching real
+   * draw.io's own retina-style PNG export density, issue #23).
+   */
+  pngScale?: number;
 }
 
 /**
