@@ -1334,6 +1334,34 @@ describe("renderDrawioToSvg", () => {
     expect(svg).not.toContain("scale(1 -1");
   });
 
+  it("keeps a flipped cell's label text upright/unmirrored, matching real draw.io (issue #57 follow-up)", () => {
+    // Verified against the real draw.io web app: flipping a shape mirrors
+    // its geometry but the label stays readable, not mirrored. The
+    // original flipH/flipV fix wrapped the whole cell (shape + label) in
+    // one `scale(-1 ...)` transform, which also mirrored the label text
+    // into unreadable backwards glyphs - caught via a real E2E screenshot
+    // comparison, not by the original label-less unit tests.
+    const xml = drawio(
+      '<mxCell id="0"/><mxCell id="1" parent="0"/>' +
+        '<mxCell id="n1" value="Flipped" style="shape=triangle;flipH=1;" vertex="1" parent="1">' +
+        '<mxGeometry x="0" y="0" width="50" height="50" as="geometry"/></mxCell>',
+    );
+
+    const svg = renderDrawioToSvg(xml);
+
+    // The shape (polygon) is still mirrored...
+    expect(svg).toMatch(/<g transform="translate\(25 25\) scale\(-1 1\) translate\(-25 -25\)">/);
+    // ...but the label's own <text> element must NOT sit inside that
+    // mirrored group - it renders unwrapped (or in its own, non-mirrored
+    // group), so the text glyphs themselves are never flipped.
+    const flippedGroupMatch = svg.match(
+      /<g transform="translate\(25 25\) scale\(-1 1\) translate\(-25 -25\)">([\s\S]*?)<\/g>/,
+    );
+    expect(flippedGroupMatch).not.toBeNull();
+    expect(flippedGroupMatch![1]).not.toContain("<text");
+    expect(svg).toContain(">Flipped<");
+  });
+
   it("shifts negative-coordinate content back onto the canvas instead of clipping it (issue #15)", () => {
     const xml = drawio(
       '<mxCell id="0"/><mxCell id="1" parent="0"/>' +

@@ -2173,6 +2173,16 @@ function renderPage(
       textY -= ((lines.length - 1) * lineHeight) / 2;
     }
 
+    // Everything pushed to `cellSvg` from here on is label/text markup.
+    // Real draw.io's flipH/flipV mirrors a shape's own geometry but keeps
+    // its label text upright/readable (mxText is a separate shape state
+    // that ignores the vertex's own flip) - verified against the real
+    // draw.io web app: a flipped triangle's label still reads normally,
+    // not mirrored. Remember this split point so the flip transform below
+    // can be applied to the shape portion only, not this label portion
+    // (issue #57 follow-up correction).
+    const shapeSvgLength = cellSvg.length;
+
     // Renders a line's body as either plain escaped text or, when it
     // carries multi-styled inline runs (issue #56), sibling `<tspan>`s
     // each with their own bold/italic attributes.
@@ -2235,29 +2245,37 @@ function renderPage(
     const rotation = Number.parseFloat(style.properties.rotation ?? "0");
     const flipH = style.properties.flipH === "1";
     const flipV = style.properties.flipV === "1";
-    const transforms: string[] = [];
-    if (flipH || flipV) {
-      const cx = x + w / 2;
-      const cy = y + h / 2;
-      const sx = flipH ? -1 : 1;
-      const sy = flipV ? -1 : 1;
-      // mxgraph applies flip in the shape's own local coordinate space
-      // before rotation, so this transform is prepended (i.e. applied
-      // first, since SVG transforms compose left-to-right as outer-to-inner)
-      // ahead of the rotate() below (issue #57, sub-item 6a).
-      transforms.push(`translate(${cx} ${cy}) scale(${sx} ${sy}) translate(${-cx} ${-cy})`);
-    }
-    if (!Number.isNaN(rotation) && rotation !== 0) {
-      const cx = x + w / 2;
-      const cy = y + h / 2;
-      transforms.push(`rotate(${rotation} ${cx} ${cy})`);
-    }
-    svgById.set(
-      id,
-      transforms.length > 0
-        ? `<g transform="${transforms.join(" ")}">${cellSvg.join("")}</g>`
-        : cellSvg.join(""),
-    );
+    const rotateTransform =
+      !Number.isNaN(rotation) && rotation !== 0
+        ? `rotate(${rotation} ${x + w / 2} ${y + h / 2})`
+        : "";
+    const flipTransform =
+      flipH || flipV
+        ? // mxgraph applies flip in the shape's own local coordinate
+          // space before rotation, so this is prepended ahead of the
+          // rotate() below (issue #57, sub-item 6a).
+          `translate(${x + w / 2} ${y + h / 2}) scale(${flipH ? -1 : 1} ${flipV ? -1 : 1}) translate(${-(x + w / 2)} ${-(y + h / 2)})`
+        : "";
+    const shapeSvg = cellSvg.slice(0, shapeSvgLength);
+    const labelSvg = cellSvg.slice(shapeSvgLength);
+    // Flip mirrors the shape's own geometry only, never its label text -
+    // real draw.io keeps a flipped shape's label upright/readable, unlike
+    // this file's previous flipH/flipV fix which wrapped the whole cell
+    // (shape + label) in one transform and mirrored the text into
+    // unreadable backwards glyphs (caught via a real draw.io comparison
+    // during E2E verification, not by the original unit tests - those
+    // only covered label-less cells). Rotation still applies to both.
+    const shapeTransforms = [flipTransform, rotateTransform].filter(Boolean).join(" ");
+    const wrappedShape = shapeTransforms
+      ? `<g transform="${shapeTransforms}">${shapeSvg.join("")}</g>`
+      : shapeSvg.join("");
+    const wrappedLabel =
+      labelSvg.length === 0
+        ? ""
+        : rotateTransform
+          ? `<g transform="${rotateTransform}">${labelSvg.join("")}</g>`
+          : labelSvg.join("");
+    svgById.set(id, wrappedShape + wrappedLabel);
   }
 
   // Real draw.io paints cells in document/z-order (later-declared cells on
