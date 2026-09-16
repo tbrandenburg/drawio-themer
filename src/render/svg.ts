@@ -1033,7 +1033,7 @@ function renderPage(
   defs: string[],
   gradientIds: Map<string, string>,
   markerIds: Map<string, string>,
-): { nodeSvg: string[]; edgeSvg: string[]; width: number; height: number; background?: string } {
+): { paintSvg: string[]; width: number; height: number; background?: string } {
   const modelDoc = new DOMParser().parseFromString(modelXml, "text/xml");
   const root = modelDoc.documentElement as unknown as XmlElement;
   // Per-page background color (issue #58, 7b): real draw.io stores this as
@@ -1579,7 +1579,13 @@ function renderPage(
     return ensureMarkerId(markerKind, scale, end === "start");
   }
 
-  const edgeSvg: string[] = [];
+  // Markup for each edge/vertex cell is kept keyed by its own cell id
+  // (rather than in two hard-"edges behind nodes" buckets) so the final
+  // paint order below can interleave them by real document/z-order,
+  // matching real draw.io - an edge declared after a container in the
+  // XML (the common case) paints on top of that container's fill instead
+  // of being unconditionally hidden behind every node (issue #60).
+  const svgById = new Map<string, string>();
   for (const cell of cells) {
     if (cell.getAttribute("edge") !== "1") continue;
     const edgeId = cell.getAttribute("id");
@@ -1607,10 +1613,8 @@ function renderPage(
         : `<line x1="${p1x.toFixed(1)}" y1="${p1y.toFixed(1)}" x2="${p2x.toFixed(1)}" ` +
           `y2="${p2y.toFixed(1)}" stroke="${stroke}" stroke-width="${strokeWidth}" ` +
           `stroke-opacity="${strokeOpacity}"${dashArray}${markerAttrs}/>`;
-    if (glow === "filter") {
-      edgeSvg.push(`<g filter="url(#softGlow)">${shape}</g>`);
-    } else {
-      edgeSvg.push(shape);
+    if (edgeId) {
+      svgById.set(edgeId, glow === "filter" ? `<g filter="url(#softGlow)">${shape}</g>` : shape);
     }
   }
 
@@ -1663,7 +1667,6 @@ function renderPage(
     return Number(!isContainer(a)) - Number(!isContainer(b));
   });
 
-  const nodeSvg: string[] = [];
   for (const cell of sortedVertices) {
     const id = cell.getAttribute("id") ?? "";
     if (isHidden(id)) continue;
@@ -2158,11 +2161,28 @@ function renderPage(
     if (!Number.isNaN(rotation) && rotation !== 0) {
       const cx = x + w / 2;
       const cy = y + h / 2;
-      nodeSvg.push(`<g transform="rotate(${rotation} ${cx} ${cy})">${cellSvg.join("")}</g>`);
+      svgById.set(id, `<g transform="rotate(${rotation} ${cx} ${cy})">${cellSvg.join("")}</g>`);
     } else {
-      nodeSvg.push(...cellSvg);
+      svgById.set(id, cellSvg.join(""));
     }
   }
+
+  // Real draw.io paints cells in document/z-order (later-declared cells on
+  // top), not "all edges behind all nodes" - an edge declared after a
+  // container in the XML (the common case) must paint on top of that
+  // container's fill instead of being swallowed by it (issue #60). Reuse
+  // the same ancestor-depth hoist as `sortedVertices` (a container must
+  // still paint before its own descendants regardless of raw document
+  // order - issue #35) but apply it uniformly to edges and vertices alike,
+  // falling back to a stable sort so same-depth/same-containerness cells
+  // keep their original relative document order.
+  const paintOrder = cells.filter((c) => svgById.has(c.getAttribute("id") ?? ""));
+  paintOrder.sort((a, b) => {
+    const depthDiff = depthOf(a.getAttribute("id") ?? "") - depthOf(b.getAttribute("id") ?? "");
+    if (depthDiff !== 0) return depthDiff;
+    return Number(!isContainer(a)) - Number(!isContainer(b));
+  });
+  const paintSvg = paintOrder.map((c) => svgById.get(c.getAttribute("id") ?? "") ?? "");
 
   /**
    * The renderer used to hard-code an 850x700 canvas regardless of the
@@ -2187,7 +2207,7 @@ function renderPage(
   const diagramWidth = Math.max(modelPageWidth, bboxRight ? bboxRight + margin : 0) || 850;
   const diagramHeight = Math.max(modelPageHeight, bboxBottom ? bboxBottom + margin : 0) || 700;
 
-  return { nodeSvg, edgeSvg, width: diagramWidth, height: diagramHeight, background: pageColor };
+  return { paintSvg, width: diagramWidth, height: diagramHeight, background: pageColor };
 }
 
 /** Gap in px drawn between stacked pages when a document has more than one. */
@@ -2260,9 +2280,7 @@ export function renderDrawioToSvg(drawioXml: string, options: RenderOptions = {}
           `<rect x="0" y="0" width="${page.width}" height="${page.height}" fill="${page.background}"/>`,
         ]
       : [];
-    pageGroups.push(
-      `<g${translate}>${[...pageBackground, ...page.edgeSvg, ...page.nodeSvg].join("\n")}</g>`,
-    );
+    pageGroups.push(`<g${translate}>${[...pageBackground, ...page.paintSvg].join("\n")}</g>`);
     yOffset += page.height + PAGE_GAP;
   }
   const canvasHeight = yOffset > 0 ? yOffset - PAGE_GAP : 0;

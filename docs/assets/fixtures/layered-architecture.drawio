@@ -44,28 +44,28 @@
           <mxGeometry x="560" y="400" width="120" height="70" as="geometry" />
         </mxCell>
 
-        <mxCell id="e1" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=1;" edge="1" parent="1" source="ui-web" target="ui-api-gw">
+        <mxCell id="e1" style="edgeStyle=none;rounded=0;html=1;" edge="1" parent="1" source="ui-web" target="ui-api-gw">
           <mxGeometry relative="1" as="geometry" />
         </mxCell>
-        <mxCell id="e2" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=1;" edge="1" parent="1" source="ui-mobile" target="ui-api-gw">
+        <mxCell id="e2" style="edgeStyle=none;rounded=0;html=1;" edge="1" parent="1" source="ui-mobile" target="ui-api-gw">
           <mxGeometry relative="1" as="geometry" />
         </mxCell>
-        <mxCell id="e3" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=1;" edge="1" parent="1" source="ui-api-gw" target="svc-order">
+        <mxCell id="e3" style="edgeStyle=none;rounded=0;html=1;" edge="1" parent="1" source="ui-api-gw" target="svc-order">
           <mxGeometry relative="1" as="geometry" />
         </mxCell>
-        <mxCell id="e4" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=1;" edge="1" parent="1" source="ui-api-gw" target="svc-user">
+        <mxCell id="e4" style="edgeStyle=none;rounded=0;html=1;" edge="1" parent="1" source="ui-api-gw" target="svc-user">
           <mxGeometry relative="1" as="geometry" />
         </mxCell>
-        <mxCell id="e5" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=1;" edge="1" parent="1" source="ui-api-gw" target="svc-payment">
+        <mxCell id="e5" style="edgeStyle=none;rounded=0;html=1;" edge="1" parent="1" source="ui-api-gw" target="svc-payment">
           <mxGeometry relative="1" as="geometry" />
         </mxCell>
-        <mxCell id="e6" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=1;" edge="1" parent="1" source="svc-order" target="db-orders">
+        <mxCell id="e6" style="edgeStyle=none;rounded=0;html=1;" edge="1" parent="1" source="svc-order" target="db-orders">
           <mxGeometry relative="1" as="geometry" />
         </mxCell>
-        <mxCell id="e7" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=1;" edge="1" parent="1" source="svc-user" target="db-users">
+        <mxCell id="e7" style="edgeStyle=none;rounded=0;html=1;" edge="1" parent="1" source="svc-user" target="db-users">
           <mxGeometry relative="1" as="geometry" />
         </mxCell>
-        <mxCell id="e8" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=1;" edge="1" parent="1" source="svc-payment" target="cache">
+        <mxCell id="e8" style="edgeStyle=none;rounded=0;html=1;" edge="1" parent="1" source="svc-payment" target="cache">
           <mxGeometry relative="1" as="geometry" />
         </mxCell>
       </root>
