@@ -276,6 +276,31 @@ describe("renderDrawioToSvg", () => {
     expect(svg).not.toContain('fill="none"');
   });
 
+  it("renders a divider line in separatorColor at the swimlane title/body seam when set (issue #58, 7a)", () => {
+    const xml = drawio(
+      '<mxCell id="0"/><mxCell id="1" parent="0"/>' +
+        '<mxCell id="lane" value="Lane" ' +
+        'style="swimlane;startSize=40;fillColor=#fafafa;separatorColor=#ff0000;horizontal=1;" ' +
+        'vertex="1" parent="1"><mxGeometry x="0" y="0" width="300" height="200" as="geometry"/></mxCell>',
+    );
+
+    const svg = renderDrawioToSvg(xml);
+
+    expect(svg).toContain('<line x1="0" y1="40" x2="300" y2="40" stroke="#ff0000"');
+  });
+
+  it("does not render a divider line for a swimlane without separatorColor set (issue #58, 7a, no regression)", () => {
+    const xml = drawio(
+      '<mxCell id="0"/><mxCell id="1" parent="0"/>' +
+        '<mxCell id="lane" value="Lane" style="swimlane;startSize=40;fillColor=#fafafa;horizontal=1;" ' +
+        'vertex="1" parent="1"><mxGeometry x="0" y="0" width="300" height="200" as="geometry"/></mxCell>',
+    );
+
+    const svg = renderDrawioToSvg(xml);
+
+    expect(svg).not.toContain("<line");
+  });
+
   it("appends the font fallback stack to whatever fontFamily the theme sets", () => {
     const xml = drawio(
       '<mxCell id="0"/><mxCell id="1" parent="0"/>' +
@@ -765,6 +790,32 @@ describe("renderDrawioToSvg", () => {
 
     expect(svg).toContain(">PageOneNode<");
     expect(svg).toContain(">PageTwoNode<");
+  });
+
+  it("uses a page's pageColor attribute as that page's background instead of the global default (issue #58, 7b)", () => {
+    const xml =
+      '<mxfile host="test"><diagram id="p1" name="Page-1">' +
+      '<mxGraphModel pageColor="#001122"><root>' +
+      '<mxCell id="0"/><mxCell id="1" parent="0"/>' +
+      '<mxCell id="n1" value="Node" style="" vertex="1" parent="1">' +
+      '<mxGeometry x="0" y="0" width="100" height="50" as="geometry"/></mxCell>' +
+      "</root></mxGraphModel></diagram></mxfile>";
+
+    const svg = renderDrawioToSvg(xml);
+
+    expect(svg).toContain('fill="#001122"');
+  });
+
+  it("keeps the global background default for a page without a pageColor attribute (issue #58, 7b, no regression)", () => {
+    const xml = drawio(
+      '<mxCell id="0"/><mxCell id="1" parent="0"/>' +
+        '<mxCell id="n1" value="Node" style="" vertex="1" parent="1">' +
+        '<mxGeometry x="0" y="0" width="100" height="50" as="geometry"/></mxCell>',
+    );
+
+    const svg = renderDrawioToSvg(xml);
+
+    expect(svg).toMatch(/<rect width="\d+" height="\d+" fill="#ffffff"\/>/);
   });
 
   it("wraps a long label onto multiple lines when whiteSpace=wrap is set", () => {

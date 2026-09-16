@@ -1033,9 +1033,14 @@ function renderPage(
   defs: string[],
   gradientIds: Map<string, string>,
   markerIds: Map<string, string>,
-): { nodeSvg: string[]; edgeSvg: string[]; width: number; height: number } {
+): { nodeSvg: string[]; edgeSvg: string[]; width: number; height: number; background?: string } {
   const modelDoc = new DOMParser().parseFromString(modelXml, "text/xml");
   const root = modelDoc.documentElement as unknown as XmlElement;
+  // Per-page background color (issue #58, 7b): real draw.io stores this as
+  // a `pageColor` attribute on the `<mxGraphModel>` root element (the same
+  // attribute draw.io's own "Page Background" dialog writes) - falls back
+  // to the caller's global `options.background` default when absent.
+  const pageColor = root.getAttribute("pageColor") || undefined;
   const cells = childElements(root, "mxCell");
   const cellById = new Map<string, XmlElement>();
   for (const cell of cells) {
@@ -1988,6 +1993,19 @@ function renderPage(
         ),
       );
       cellSvg.push(withShadow(bodyRect));
+      // separatorColor (issue #58, 7a): an opt-in swimlane style property,
+      // distinct from the title/body seam-rounding fix (issue #50/#51) -
+      // draws an explicit divider line along that same title/body seam
+      // when set, in the given color (mxSwimlane.js paintDivider()).
+      const separatorColor = style.properties.separatorColor;
+      if (separatorColor && separatorColor !== "none") {
+        const separatorLine = rotatedTitle
+          ? `<line x1="${x + titleW}" y1="${y}" x2="${x + titleW}" y2="${y + h}" ` +
+            `stroke="${separatorColor}" stroke-width="${strokeWidth}"/>`
+          : `<line x1="${x}" y1="${y + titleH}" x2="${x + w}" y2="${y + titleH}" ` +
+            `stroke="${separatorColor}" stroke-width="${strokeWidth}"/>`;
+        cellSvg.push(separatorLine);
+      }
     } else {
       const rect =
         `<rect x="${x}" y="${y}" width="${w}" height="${h}" rx="${rx}" ` +
@@ -2169,7 +2187,7 @@ function renderPage(
   const diagramWidth = Math.max(modelPageWidth, bboxRight ? bboxRight + margin : 0) || 850;
   const diagramHeight = Math.max(modelPageHeight, bboxBottom ? bboxBottom + margin : 0) || 700;
 
-  return { nodeSvg, edgeSvg, width: diagramWidth, height: diagramHeight };
+  return { nodeSvg, edgeSvg, width: diagramWidth, height: diagramHeight, background: pageColor };
 }
 
 /** Gap in px drawn between stacked pages when a document has more than one. */
@@ -2234,7 +2252,17 @@ export function renderDrawioToSvg(drawioXml: string, options: RenderOptions = {}
     const page = renderPage(modelXml, glow, defs, gradientIds, markerIds);
     canvasWidth = Math.max(canvasWidth, page.width);
     const translate = yOffset === 0 ? "" : ` transform="translate(0,${yOffset})"`;
-    pageGroups.push(`<g${translate}>${[...page.edgeSvg, ...page.nodeSvg].join("\n")}</g>`);
+    // A page's own `pageColor` (issue #58, 7b) overrides the global
+    // `background` default for just that page's band, painted as its own
+    // rect before that page's node/edge content.
+    const pageBackground = page.background
+      ? [
+          `<rect x="0" y="0" width="${page.width}" height="${page.height}" fill="${page.background}"/>`,
+        ]
+      : [];
+    pageGroups.push(
+      `<g${translate}>${[...pageBackground, ...page.edgeSvg, ...page.nodeSvg].join("\n")}</g>`,
+    );
     yOffset += page.height + PAGE_GAP;
   }
   const canvasHeight = yOffset > 0 ? yOffset - PAGE_GAP : 0;
