@@ -135,18 +135,45 @@ function escapeXml(text: string): string {
  * offline). Words longer than a whole line are kept intact rather than
  * split mid-word.
  */
+/**
+ * Coarse per-character-class average width (as a multiple of font size),
+ * distinguishing narrow/average/wide glyphs - a real font-metric table is
+ * unavailable offline, but even this rough split is meaningfully more
+ * accurate than a single flat `size * 0.6` constant for every character
+ * (issue #30: that flat estimate misjudged an already-fitting,
+ * explicitly-authored line as overflowing by a single character).
+ */
+const NARROW_CHARS = /[iIl.,:;'"!|]/;
+const WIDE_CHARS = /[mwMW@%]/;
+
+function estimateTextWidth(text: string, size: number): number {
+  let width = 0;
+  for (const ch of text) {
+    if (NARROW_CHARS.test(ch)) width += size * 0.3;
+    else if (WIDE_CHARS.test(ch)) width += size * 0.8;
+    else width += size * 0.5;
+  }
+  return width;
+}
+
 function wrapLabel(label: string, width: number, fontSize: string): string[] {
   const size = Number.parseFloat(fontSize) || 12;
-  const avgCharWidth = size * 0.6;
-  const maxChars = Math.max(1, Math.floor(width / avgCharWidth));
 
   const wrapped: string[] = [];
   for (const paragraph of label.split("\n")) {
+    // Explicit, author-authored line breaks are hard breaks: only
+    // re-wrap this paragraph if it actually overflows the available
+    // width on its own (issue #30).
+    if (estimateTextWidth(paragraph, size) <= width) {
+      wrapped.push(paragraph);
+      continue;
+    }
+
     const words = paragraph.split(" ");
     let current = "";
     for (const word of words) {
       const candidate = current ? `${current} ${word}` : word;
-      if (candidate.length > maxChars && current) {
+      if (estimateTextWidth(candidate, size) > width && current) {
         wrapped.push(current);
         current = word;
       } else {
@@ -705,6 +732,16 @@ function renderPage(
     const isEllipse = shape === "ellipse" || style.tokens.includes("ellipse");
     const isRhombus = shape === "rhombus" || style.tokens.includes("rhombus");
     const isHexagon = shape === "hexagon";
+    // Matches `isText` in ../drawio/classifier.ts: a `text;`-styled cell
+    // (draw.io's "Text" shape) always renders borderless/fill-less in real
+    // draw.io, regardless of any strokeColor/fillColor left in its style
+    // (issue #29). Falls through with the same conservative heuristic for
+    // shape-less, fill-less, border-less vertices.
+    const isText =
+      style.tokens.includes("text") ||
+      (!("shape" in style.properties) &&
+        !("fillColor" in style.properties) &&
+        style.properties.strokeColor === "none");
     const label = cell.getAttribute("value") ?? "";
     const isHtmlLabel = style.properties.html === "1";
     const plainLabel = isHtmlLabel ? htmlLabelToPlainText(label) : label;
@@ -771,6 +808,9 @@ function renderPage(
       cellSvg.push(
         glow === "filter" ? `<g filter="url(#softGlow)">${rhombus}</g>${rhombus}` : rhombus,
       );
+    } else if (isText) {
+      // No box at all - real draw.io renders the "Text" shape as a bare
+      // label with no fill/stroke, regardless of style properties.
     } else if (isHexagon) {
       // Matches real draw.io's default hexagon inset (~25% of width for
       // the slanted side cuts).
