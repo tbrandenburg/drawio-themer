@@ -1850,4 +1850,93 @@ describe("label positioning and clipping (issue #55)", () => {
     expect(clippedSvg).toContain("<clipPath");
     expect(clippedSvg).toContain("clip-path=");
   });
+
+  // Issue #58, 7d: container-relative edge routing investigation.
+  describe("edge endpoints and container-relative coordinates (issue #58, 7d)", () => {
+    it("clips an edge endpoint to a node nested inside a (non-collapsed) container at its absolute position", () => {
+      // "Child" is at local (20,30) inside a container placed at (100,100),
+      // so its real absolute box is (120,130)-(200,170). The edge's source
+      // endpoint must land on that absolute box's perimeter, not on the
+      // container's own box and not on the child's raw local (20,30)
+      // coordinates.
+      const xml = drawio(
+        '<mxCell id="0"/><mxCell id="1" parent="0"/>' +
+          '<mxCell id="c1" value="Container" style="container=1;" vertex="1" parent="1">' +
+          '<mxGeometry x="100" y="100" width="300" height="200" as="geometry"/></mxCell>' +
+          '<mxCell id="n1" value="Child" style="" vertex="1" parent="c1">' +
+          '<mxGeometry x="20" y="30" width="80" height="40" as="geometry"/></mxCell>' +
+          '<mxCell id="n2" value="Outside" style="" vertex="1" parent="1">' +
+          '<mxGeometry x="500" y="500" width="80" height="40" as="geometry"/></mxCell>' +
+          '<mxCell id="e1" style="" edge="1" parent="1" source="n1" target="n2">' +
+          '<mxGeometry relative="1" as="geometry"/></mxCell>',
+      );
+
+      const svg = renderDrawioToSvg(xml);
+
+      // The child renders at its real absolute box (100+20, 100+30) =
+      // (120, 130), confirming absoluteOffset() resolved correctly.
+      expect(svg).toContain('<rect x="120" y="130" width="80" height="40"');
+
+      const line = svg.match(/<line x1="([\d.-]+)" y1="([\d.-]+)" x2="([\d.-]+)" y2="([\d.-]+)"/);
+      expect(line).not.toBeNull();
+      const [, x1, y1] = line!.map(Number) as unknown as [number, number, number, number];
+      // The edge must leave from the child's absolute perimeter (box
+      // 120..200 x 130..170), not from the container's box (100..400 x
+      // 100..300) and not from the child's raw local box (20..100 x
+      // 30..70).
+      expect(x1).toBeGreaterThanOrEqual(120);
+      expect(x1).toBeLessThanOrEqual(200);
+      expect(y1).toBeGreaterThanOrEqual(130);
+      expect(y1).toBeLessThanOrEqual(170);
+    });
+
+    it("documents current behavior for an edge into a node inside a collapsed container: it terminates at the hidden child's own (absolute) position, not rerouted to the container's perimeter", () => {
+      // Real draw.io reroutes an edge whose endpoint sits inside a
+      // collapsed container to visually terminate at the container's own
+      // perimeter instead. Implementing that faithfully would require
+      // porting mxgraph's edge-to-collapsed-container rerouting algorithm,
+      // which is out of scope for this investigation (see issue #58, 7d
+      // and this test file's handoff notes). This test pins down what our
+      // renderer currently does instead: it does NOT crash and does NOT
+      // silently drop the edge - it still renders a line from the hidden
+      // child's absolute (unrendered) box, which today lands inside the
+      // collapsed container's own box rather than on its border. If this
+      // is ever fixed to reroute to the container's perimeter, update this
+      // test's expectations accordingly.
+      const xml = drawio(
+        '<mxCell id="0"/><mxCell id="1" parent="0"/>' +
+          '<mxCell id="c1" value="Container" style="container=1;collapsed=1;" vertex="1" parent="1">' +
+          '<mxGeometry x="100" y="100" width="300" height="200" as="geometry"/></mxCell>' +
+          '<mxCell id="n1" value="Child" style="" vertex="1" parent="c1">' +
+          '<mxGeometry x="20" y="30" width="80" height="40" as="geometry"/></mxCell>' +
+          '<mxCell id="n2" value="Outside" style="" vertex="1" parent="1">' +
+          '<mxGeometry x="500" y="500" width="80" height="40" as="geometry"/></mxCell>' +
+          '<mxCell id="e1" style="" edge="1" parent="1" source="n1" target="n2">' +
+          '<mxGeometry relative="1" as="geometry"/></mxCell>',
+      );
+
+      const svg = renderDrawioToSvg(xml);
+
+      // The collapsed container's hidden child is not drawn as a node.
+      expect(svg).not.toContain('width="80" height="40"" x="120"');
+      const childRectCount = [...svg.matchAll(/<rect x="120" y="130"/g)].length;
+      expect(childRectCount).toBe(0);
+
+      // The edge still renders (no crash, not silently dropped) and its
+      // source endpoint is the hidden child's clipped absolute perimeter
+      // point - which, being inside the collapsed container's own box
+      // (100..400 x 100..300), is NOT on that container's own border.
+      const line = svg.match(/<line x1="([\d.-]+)" y1="([\d.-]+)" x2="([\d.-]+)" y2="([\d.-]+)"/);
+      expect(line).not.toBeNull();
+      const [, x1, y1] = line!.map(Number) as unknown as [number, number, number, number];
+      expect(x1).toBeCloseTo(180.5, 1);
+      expect(y1).toBeCloseTo(170, 1);
+      // Confirms this point is strictly inside the container's box, not on
+      // its border - i.e. no perimeter-rerouting happens today.
+      expect(x1).toBeGreaterThan(100);
+      expect(x1).toBeLessThan(400);
+      expect(y1).toBeGreaterThan(100);
+      expect(y1).toBeLessThan(300);
+    });
+  });
 });
