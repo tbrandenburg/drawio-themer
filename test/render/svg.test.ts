@@ -1184,6 +1184,47 @@ describe("renderDrawioToSvg", () => {
     expect(svg).not.toContain(">Child<");
   });
 
+  it("renders a fold glyph on a collapsed swimlane's title bar (issue #57, 6d)", () => {
+    const xml = drawio(
+      '<mxCell id="0"/><mxCell id="1" parent="0"/>' +
+        '<mxCell id="box" value="Box" ' +
+        'style="swimlane;startSize=30;collapsed=1;" vertex="1" parent="1">' +
+        '<mxGeometry x="0" y="0" width="200" height="200" as="geometry"/></mxCell>',
+    );
+
+    const svg = renderDrawioToSvg(xml);
+
+    // Glyph is a small bordered square (rect) plus a "+" cross (two lines)
+    // near the title bar's top-left corner, in addition to the title/body
+    // rects the swimlane already renders.
+    expect(svg).toMatch(/<rect x="2\.0" y="2\.0" width="16\.0" height="16\.0"/);
+  });
+
+  it("does not render a fold glyph on a non-collapsed swimlane", () => {
+    const xml = drawio(
+      '<mxCell id="0"/><mxCell id="1" parent="0"/>' +
+        '<mxCell id="box" value="Box" style="swimlane;startSize=30;" vertex="1" parent="1">' +
+        '<mxGeometry x="0" y="0" width="200" height="200" as="geometry"/></mxCell>',
+    );
+
+    const svg = renderDrawioToSvg(xml);
+
+    expect(svg).not.toMatch(/<rect x="2\.0" y="2\.0" width="16\.0" height="16\.0"/);
+  });
+
+  it("does not render a fold glyph on a plain (non-container) rect with collapsed=1", () => {
+    const xml = drawio(
+      '<mxCell id="0"/><mxCell id="1" parent="0"/>' +
+        '<mxCell id="n1" value="Plain" style="collapsed=1;" vertex="1" parent="1">' +
+        '<mxGeometry x="0" y="0" width="100" height="60" as="geometry"/></mxCell>',
+    );
+
+    const svg = renderDrawioToSvg(xml);
+
+    expect(svg).toContain(">Plain<");
+    expect(svg).not.toMatch(/<rect x="2\.0" y="2\.0" width="16\.0" height="16\.0"/);
+  });
+
   it("renders a plain group wrapper cell as invisible (no rect/label)", () => {
     const xml = drawio(
       '<mxCell id="0"/><mxCell id="1" parent="0"/>' +
