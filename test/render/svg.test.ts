@@ -35,9 +35,26 @@ describe("renderDrawioToSvg", () => {
 
     const svg = renderDrawioToSvg(xml);
 
+    // Matches mxgraph's mxCylinder.js getCylinderSize(): min(40, round(h/5))
+    // => min(40, round(100/5)) = 20.
     expect(svg).toContain("<ellipse");
-    expect(svg).toContain('<path d="M 0,18');
+    expect(svg).toContain('<path d="M 0,20');
     expect(svg).not.toMatch(/<rect x="0" y="0"/);
+  });
+
+  it("caps the cylinder cap height at 40px for tall cylinders (mxgraph parity)", () => {
+    const xml = drawio(
+      '<mxCell id="0"/><mxCell id="1" parent="0"/>' +
+        '<mxCell id="db1" value="Tall DB" style="shape=cylinder3;fillColor=#ffe6cc;strokeColor=#d79b00;" ' +
+        'vertex="1" parent="1"><mxGeometry x="0" y="0" width="80" height="400" as="geometry"/></mxCell>',
+    );
+
+    const svg = renderDrawioToSvg(xml);
+
+    // Uncapped proportional formula would give h*0.18 = 72; real mxgraph
+    // caps it at 40 via min(40, round(400/5)) = min(40, 80) = 40.
+    expect(svg).toContain('<path d="M 0,40');
+    expect(svg).not.toContain('<path d="M 0,72');
   });
 
   it("clips edges to the node's border instead of drawing from center to center", () => {

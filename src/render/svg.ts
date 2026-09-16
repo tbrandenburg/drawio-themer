@@ -1024,7 +1024,10 @@ function renderPage(
     const cellSvg: string[] = [];
 
     if (shape.includes("cylinder")) {
-      const eh = h * 0.18;
+      // Matches real mxgraph's mxCylinder.js getCylinderSize(): the
+      // ellipse cap height is proportional (h/5) but capped at a flat
+      // 40px for tall cylinders, instead of scaling forever.
+      const eh = Math.min(40, Math.round(h / 5));
       const cyl =
         `<g stroke="${stroke}" stroke-width="${strokeWidth}" stroke-opacity="${strokeOpacity}" ` +
         `fill="${fillRef}" fill-opacity="${fillOpacity}"${dashArray}>` +
