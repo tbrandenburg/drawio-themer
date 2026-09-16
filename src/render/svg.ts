@@ -663,7 +663,20 @@ function renderPage(
   }
 
   const vertices = cells.filter((c) => c.getAttribute("vertex") === "1");
-  const isContainer = (c: XmlElement) => (c.getAttribute("style") ?? "").includes("container=1");
+  // Must match `isContainer` in ../drawio/classifier.ts exactly: draw.io
+  // treats swimlane-shaped cells as containers by shape alone, without
+  // ever setting `container=1` (issue #27). Checking only `container=1`
+  // here left swimlane containers un-hoisted in the paint-order sort
+  // below, so a child cell physically preceding its container in the raw
+  // XML got painted first, then overwritten by the container's own fill.
+  const isContainer = (c: XmlElement) => {
+    const { tokens, properties } = parseStyle(c.getAttribute("style") ?? "");
+    return (
+      tokens.includes("swimlane") ||
+      (properties.shape ?? "").startsWith("swimlane") ||
+      properties.container === "1"
+    );
+  };
   // Containers draw before their children so nested nodes render on top.
   const sortedVertices = [...vertices].sort(
     (a, b) => Number(!isContainer(a)) - Number(!isContainer(b)),

@@ -75,6 +75,24 @@ describe("renderDrawioToSvg", () => {
     expect(svg.indexOf("#eeeeee")).toBeLessThan(svg.indexOf("#00ff00"));
   });
 
+  it("draws a swimlane container before a child declared earlier in the XML, even without container=1 (issue #27)", () => {
+    const xml = drawio(
+      '<mxCell id="0"/><mxCell id="1" parent="0"/>' +
+        '<mxCell id="child" value="Inner" style="fillColor=#00ff00;" vertex="1" parent="lane">' +
+        '<mxGeometry x="10" y="10" width="20" height="20" as="geometry"/></mxCell>' +
+        '<mxCell id="lane" value="Lane" style="swimlane;fillColor=#fafafa;" vertex="1" parent="1">' +
+        '<mxGeometry x="0" y="0" width="200" height="200" as="geometry"/></mxCell>',
+    );
+
+    const svg = renderDrawioToSvg(xml);
+
+    expect(svg).toContain(">Inner<");
+    // "lane" is a swimlane (no explicit container=1) declared after "child"
+    // in document order, but must still be drawn first so the child's
+    // fill/border render on top instead of being painted over.
+    expect(svg.indexOf("#fafafa")).toBeLessThan(svg.indexOf("#00ff00"));
+  });
+
   it("appends the font fallback stack to whatever fontFamily the theme sets", () => {
     const xml = drawio(
       '<mxCell id="0"/><mxCell id="1" parent="0"/>' +
