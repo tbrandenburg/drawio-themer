@@ -58,6 +58,27 @@ interface NodeGeometry {
   y: number;
   w: number;
   h: number;
+  /**
+   * The node's perimeter shape kind, used by `connectionPoint` to clip
+   * edge endpoints to the shape's real border instead of always using a
+   * rectangular bounding-box clip (issue #35). Edge label cells (added in
+   * a second pass, see `edgeLabelCells`) have no real shape and default
+   * to `"rect"`, matching the previous behavior for them.
+   */
+  shape: PerimeterShape;
+}
+
+/**
+ * Derives a node's `PerimeterShape` from its parsed style, matching the
+ * same shape-detection tokens used by the node-rendering loop below
+ * (`isEllipse`/`isRhombus`/`isHexagon`).
+ */
+function perimeterShapeOf(style: ReturnType<typeof parseStyle>): PerimeterShape {
+  const shape = style.properties.shape ?? "";
+  if (shape === "ellipse" || style.tokens.includes("ellipse")) return "ellipse";
+  if (shape === "rhombus" || style.tokens.includes("rhombus")) return "rhombus";
+  if (shape === "hexagon") return "hexagon";
+  return "rect";
 }
 
 function childElements(parent: XmlElement, tagName: string): XmlElement[] {
@@ -113,6 +134,129 @@ function clipToRect(
     dy !== 0 ? Math.abs(hh / dy) : Infinity,
   );
   return [cx + dx * scale, cy + dy * scale];
+}
+
+/**
+ * Perimeter shape kinds this renderer can clip an edge endpoint to,
+ * mirroring mxgraph's `mxPerimeter` functions (`EllipsePerimeter`,
+ * `RhombusPerimeter`, `HexagonPerimeter`) instead of only ever using a
+ * rectangular bounding-box clip (issue #35). `"rect"` (and anything not
+ * otherwise recognized) keeps the existing `clipToRect` behavior.
+ */
+type PerimeterShape = "rect" | "ellipse" | "rhombus" | "hexagon";
+
+/**
+ * Clips the point at the ellipse's boundary along the line from (cx,cy)
+ * [the ellipse's center] toward (ox,oy), matching mxgraph's
+ * `mxPerimeter.EllipsePerimeter`: parametrize the ray as `(cx + dx*t, cy +
+ * dy*t)` and solve for the `t > 0` where `((dx*t)/a)^2 + ((dy*t)/b)^2 = 1`.
+ */
+function clipToEllipse(
+  cx: number,
+  cy: number,
+  ox: number,
+  oy: number,
+  rw: number,
+  rh: number,
+): [number, number] {
+  const dx = ox - cx;
+  const dy = oy - cy;
+  if (dx === 0 && dy === 0) return [cx, cy];
+  const a = rw / 2;
+  const b = rh / 2;
+  if (a === 0 || b === 0) return [cx, cy];
+  const denom = (dx / a) ** 2 + (dy / b) ** 2;
+  const t = 1 / Math.sqrt(denom);
+  return [cx + dx * t, cy + dy * t];
+}
+
+/**
+ * Intersects the ray from (cx,cy) toward (ox,oy) with whichever edge of
+ * the given closed polygon it crosses first, returning that intersection
+ * point. Falls back to (cx,cy) if no edge intersects (degenerate/self-
+ * intersecting polygon), which should not happen for the convex
+ * rhombus/hexagon outlines this renderer builds. Shared by
+ * `clipToRhombus` and `clipToHexagon` (both mxgraph perimeter functions
+ * boil down to "ray vs polygon edges" for a convex outline).
+ */
+function clipToPolygon(
+  cx: number,
+  cy: number,
+  ox: number,
+  oy: number,
+  points: Array<[number, number]>,
+): [number, number] {
+  const dx = ox - cx;
+  const dy = oy - cy;
+  if (dx === 0 && dy === 0) return [cx, cy];
+  for (let i = 0; i < points.length; i++) {
+    const [ax, ay] = points[i]!;
+    const [bx, by] = points[(i + 1) % points.length]!;
+    const ex = bx - ax;
+    const ey = by - ay;
+    const denom = dx * ey - dy * ex;
+    if (denom === 0) continue; // parallel to this edge
+    // Solve cx + dx*t = ax + ex*s ; cy + dy*t = ay + ey*s for t (ray param)
+    // and s (edge param, must be in [0,1] to lie on the segment).
+    const t = ((ax - cx) * ey - (ay - cy) * ex) / denom;
+    const s = ((ax - cx) * dy - (ay - cy) * dx) / denom;
+    if (t >= 0 && s >= 0 && s <= 1) {
+      return [cx + dx * t, cy + dy * t];
+    }
+  }
+  return [cx, cy];
+}
+
+/** The rhombus (diamond) outline mxgraph draws for `rhombus`-shaped cells. */
+function rhombusPoints(x: number, y: number, w: number, h: number): Array<[number, number]> {
+  return [
+    [x + w / 2, y],
+    [x + w, y + h / 2],
+    [x + w / 2, y + h],
+    [x, y + h / 2],
+  ];
+}
+
+/** The hexagon outline this renderer draws for `shape=hexagon` cells (25% inset). */
+function hexagonPoints(x: number, y: number, w: number, h: number): Array<[number, number]> {
+  const inset = w * 0.25;
+  return [
+    [x + inset, y],
+    [x + w - inset, y],
+    [x + w, y + h / 2],
+    [x + w - inset, y + h],
+    [x + inset, y + h],
+    [x, y + h / 2],
+  ];
+}
+
+/**
+ * Clips an edge endpoint to a node's real perimeter (ellipse/rhombus/
+ * hexagon), falling back to `clipToRect` for `"rect"` or any unhandled
+ * shape (issue #35: `mxPerimeter.js`-equivalent perimeter math, replacing
+ * the previous bounding-box-only approximation).
+ */
+function clipToShape(
+  shape: PerimeterShape,
+  cx: number,
+  cy: number,
+  ox: number,
+  oy: number,
+  x: number,
+  y: number,
+  w: number,
+  h: number,
+): [number, number] {
+  switch (shape) {
+    case "ellipse":
+      return clipToEllipse(cx, cy, ox, oy, w, h);
+    case "rhombus":
+      return clipToPolygon(cx, cy, ox, oy, rhombusPoints(x, y, w, h));
+    case "hexagon":
+      return clipToPolygon(cx, cy, ox, oy, hexagonPoints(x, y, w, h));
+    default:
+      return clipToRect(cx, cy, ox, oy, w, h);
+  }
 }
 
 /** Builds a `<polygon points="...">` string from a flat array of [x,y] pairs. */
@@ -417,6 +561,7 @@ function renderPage(
       y: parentOffset.y + numAttr(geo, "y"),
       w: numAttr(geo, "width"),
       h: numAttr(geo, "height"),
+      shape: perimeterShapeOf(parseStyle(cell.getAttribute("style") ?? "")),
     });
   }
 
@@ -450,7 +595,7 @@ function renderPage(
     }
     const cx = geo.x + geo.w / 2;
     const cy = geo.y + geo.h / 2;
-    return clipToRect(cx, cy, otherX, otherY, geo.w, geo.h);
+    return clipToShape(geo.shape, cx, cy, otherX, otherY, geo.x, geo.y, geo.w, geo.h);
   }
 
   /**
@@ -584,6 +729,7 @@ function renderPage(
       y: py + dy - h / 2,
       w,
       h,
+      shape: "rect",
     });
   }
 
@@ -711,9 +857,38 @@ function renderPage(
     );
   };
   // Containers draw before their children so nested nodes render on top.
-  const sortedVertices = [...vertices].sort(
-    (a, b) => Number(!isContainer(a)) - Number(!isContainer(b)),
-  );
+  // `isContainer` alone only separates containers from non-containers; it
+  // does NOT account for multi-level nesting depth. With 3+ levels (e.g.
+  // an inner swimlane nested inside an outer one, both containers), a
+  // stable sort on that boolean alone preserves the *original* relative
+  // document order between same-bucket cells - if the inner container
+  // happened to be declared before the outer one, it would still be
+  // painted before its own ancestor and get overwritten by it (issue
+  // #35 regression test: multi-level nested swimlanes with children out
+  // of document order). Sort primarily by ancestor depth (shallower
+  // first) so every cell paints after all of its ancestors regardless of
+  // document order, then fall back to the existing container-first
+  // tiebreak for same-depth siblings.
+  const depthCache = new Map<string, number>();
+  function depthOf(cellId: string, seen = new Set<string>()): number {
+    const cached = depthCache.get(cellId);
+    if (cached !== undefined) return cached;
+    const cell = cellById.get(cellId);
+    const parentId = cell?.getAttribute("parent");
+    if (!cell || !parentId || seen.has(cellId)) {
+      depthCache.set(cellId, 0);
+      return 0;
+    }
+    seen.add(cellId);
+    const depth = 1 + depthOf(parentId, seen);
+    depthCache.set(cellId, depth);
+    return depth;
+  }
+  const sortedVertices = [...vertices].sort((a, b) => {
+    const depthDiff = depthOf(a.getAttribute("id") ?? "") - depthOf(b.getAttribute("id") ?? "");
+    if (depthDiff !== 0) return depthDiff;
+    return Number(!isContainer(a)) - Number(!isContainer(b));
+  });
 
   const nodeSvg: string[] = [];
   for (const cell of sortedVertices) {
@@ -825,12 +1000,7 @@ function renderPage(
         glow === "filter" ? `<g filter="url(#softGlow)">${ellipse}</g>${ellipse}` : ellipse,
       );
     } else if (isRhombus) {
-      const points: Array<[number, number]> = [
-        [x + w / 2, y],
-        [x + w, y + h / 2],
-        [x + w / 2, y + h],
-        [x, y + h / 2],
-      ];
+      const points = rhombusPoints(x, y, w, h);
       const rhombus =
         `<polygon points="${polygonPoints(points)}" fill="${fillRef}" fill-opacity="${fillOpacity}" ` +
         `stroke="${stroke}" stroke-width="${strokeWidth}" stroke-opacity="${strokeOpacity}"${dashArray}/>`;
@@ -843,15 +1013,7 @@ function renderPage(
     } else if (isHexagon) {
       // Matches real draw.io's default hexagon inset (~25% of width for
       // the slanted side cuts).
-      const inset = w * 0.25;
-      const points: Array<[number, number]> = [
-        [x + inset, y],
-        [x + w - inset, y],
-        [x + w, y + h / 2],
-        [x + w - inset, y + h],
-        [x + inset, y + h],
-        [x, y + h / 2],
-      ];
+      const points = hexagonPoints(x, y, w, h);
       const hexagon =
         `<polygon points="${polygonPoints(points)}" fill="${fillRef}" fill-opacity="${fillOpacity}" ` +
         `stroke="${stroke}" stroke-width="${strokeWidth}" stroke-opacity="${strokeOpacity}"${dashArray}/>`;
